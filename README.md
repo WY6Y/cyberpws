@@ -1,3 +1,4 @@
+<img width="1417" height="719" alt="Screenshot 2026-06-10 at 4 30 52 PM" src="https://github.com/user-attachments/assets/c9772cd4-9d2e-4cf6-a3dc-eb7957d04061" />
 # WY6Y Weather — Cyberpunk PWS Dashboard
 
 A self-hosted, neon-drenched dashboard for your Weather Underground Personal Weather Station (PWS). Built as a replacement for the official WU app with a proper cyberpunk / HUD aesthetic.
