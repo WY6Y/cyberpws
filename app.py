@@ -177,14 +177,14 @@ def api_summary():
 # ============== MAIN ==============
 if __name__ == "__main__":
     print("╔════════════════════════════════════════════════════════════╗")
-    print("║  WY6Y WEATHER  •  CYBERPWS UPLINK  |  KOKEDMON585          ║")
+    print(f"║  {DISPLAY_NAME}  •  CYBERPWS UPLINK  |  {STATION_ID}          ║")
     print("║  Neon. Data. No corporate bullshit.                        ║")
     print("╚════════════════════════════════════════════════════════════╝")
     print(f"Station : {STATION_ID} ({DISPLAY_NAME})")
     print("IMPORTANT: For Chrome PWAs and to avoid cookie warnings,")
     print("           access via HTTPS only (see Caddy reverse proxy instructions).")
     print(f"Binding : 127.0.0.1:5000 (localhost only - put Caddy in front for HTTPS)")
-    print("Open via Tailscale (HTTPS recommended): https://WY6YPi5")
-    print("             or https://wy6ypi5.taile0fc4a.ts.net")
+    print("Open via Tailscale (HTTPS recommended): https://YOUR-TAILSCALE-HOST")
+    print("             or https://your-full-magic-dns.ts.net")
     print("Ctrl-C to stop.\n")
     app.run(host="127.0.0.1", port=5000, debug=False, threaded=True)

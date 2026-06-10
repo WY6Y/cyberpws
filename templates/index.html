@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>WY6Y Weather • KOKEDMON585</title>
+  <title>WY6Y Weather • YOUR_STATION_ID</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
@@ -255,7 +255,7 @@
 
       <div class="text-right">
         <div class="text-sm neon-green tracking-[3px] font-bold">{{ display_name }} • {{ neighborhood | upper }}</div>
-        <div class="text-[10px] opacity-60">STATION KOKEDMON585 • LAT 42.09 • WU PWS NODE</div>
+        <div class="text-[10px] opacity-60">STATION YOUR_STATION_ID • LAT XX.XX • WU PWS NODE</div>
       </div>
 
       <div class="text-right min-w-[180px]">
@@ -774,7 +774,7 @@
 
     function copyExport() {
       const payload = {
-        station: "KOKEDMON585",
+        station: "YOUR_STATION_ID",
         exported_at: new Date().toISOString(),
         current: window.lastCurrent || null,
         rapid: lastRapidData.slice(-20),
@@ -857,7 +857,7 @@
         });
       }
 
-      console.log('%c[CYBERPWS] Badass dashboard initialized. Brasswood uplink live.', 'color:#00ff9f');
+      console.log('%c[CYBERPWS] Badass dashboard initialized. Uplink live.', 'color:#00ff9f');
     }
 
     // Boot

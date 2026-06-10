@@ -21,7 +21,7 @@ Replaces the corporate UI with something that actually looks cool on a monitor (
 ## Prerequisites
 
 - A Weather Underground API key (PWS contributor key)
-- Your PWS Station ID (e.g. `KOKEDMON585`)
+- Your PWS Station ID (e.g. `KXXXXXXX`)
 - Tailscale (strongly recommended for remote access + easy HTTPS)
 - Python 3 + Flask + requests (the app is lightweight)
 - Caddy (for proper HTTPS reverse proxy — required for a good PWA experience and to avoid cookie warnings)
@@ -60,9 +60,9 @@ Chrome (and installed "web apps") shows cookie / "not secure" warnings on plain 
 ### 1. Generate certs (full MagicDNS name)
 
 ```bash
-tailscale cert wy6ypi5.taile0fc4a.ts.net
+tailscale cert your-hostname.ts.net
 sudo mkdir -p /etc/caddy/certs
-sudo mv wy6ypi5.taile0fc4a.ts.net.crt wy6ypi5.taile0fc4a.ts.net.key /etc/caddy/certs/
+sudo mv your-hostname.ts.net.crt your-hostname.ts.net.key /etc/caddy/certs/
 sudo chown -R caddy:caddy /etc/caddy/certs 2>/dev/null || true
 sudo chmod 600 /etc/caddy/certs/*
 ```
@@ -86,8 +86,8 @@ sudo systemctl restart caddy
 
 ### 4. Access
 
-- https://wy6ypi5.taile0fc4a.ts.net (recommended)
-- or https://WY6YPi5 (short name — redirects)
+- https://your-hostname.ts.net (recommended)
+- or https://YOUR-SHORT-NAME (short name — redirects)
 
 ### 5. Saved Web App / PWA
 
