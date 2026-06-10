@@ -27,18 +27,38 @@ Replaces the corporate UI with something that actually looks cool on a monitor (
 - Python 3 + Flask + requests (the app is lightweight)
 - Caddy (for proper HTTPS reverse proxy — required for a good PWA experience and to avoid cookie warnings)
 
-## Quick Start (Development)
+## Quick Install (Recommended)
+
+```bash
+git clone https://github.com/WY6Y/cyberpws.git
+cd cyberpws
+bash install.sh
+./run.sh
+```
+
+Then open http://localhost:5000 (or your Pi's IP).
+
+The installer will:
+- Create a Python virtual environment
+- Install dependencies
+- Prompt for your WU API key and Station ID
+- Create a `.env` file
+
+## Quick Start (Manual)
 
 ```bash
 cd ~/cyberpws
-python3 app.py
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+
+# Edit .env with your details (copy from .env.example if present)
+./run.sh
 ```
 
-The app binds only to `127.0.0.1:5000` by default.
+The app binds to `0.0.0.0:5000` by default (accessible on your network).
 
-Open http://localhost:5000 locally.
-
-**Note:** For anything serious (especially a saved Chrome web app), you should run it behind HTTPS. See the Caddy section below.
+**Note:** For a proper Chrome PWA experience without cookie warnings, run it behind HTTPS using Caddy + Tailscale (see below). The installer is the fastest way to get started locally.
 
 ## Configuration
 
@@ -102,26 +122,21 @@ See `Caddyfile.example` for the exact configuration (it includes `auto_https off
 
 ## Running Persistently
 
+The `install.sh` script can optionally set up a user systemd service for you.
+
 ### cyberpws (the dashboard)
 
-It is set up as a **user systemd service**.
-
 ```bash
-# Status
+# If you let install.sh set up the service:
 systemctl --user status cyberpws
-
-# Restart after changes
 systemctl --user restart cyberpws
-
-# Logs
 journalctl --user -u cyberpws -f
+
+# Or run manually anytime
+./run.sh
 ```
 
-The service file lives at `~/.config/systemd/user/cyberpws.service`.
-
 ### Caddy (HTTPS reverse proxy)
-
-Managed as a **system service** by the caddy package.
 
 ```bash
 sudo systemctl status caddy
@@ -129,7 +144,9 @@ sudo systemctl restart caddy
 sudo journalctl -u caddy -f
 ```
 
-Caddy is required to bind to 80/443 and is enabled on boot.
+Caddy (installed via the package) runs as a system service and is enabled on boot.
+
+See `Caddyfile.example` for the recommended Tailscale + HTTPS configuration.
 
 ## Tech Stack
 

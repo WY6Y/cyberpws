@@ -21,14 +21,20 @@ import json
 import os
 import time
 from statistics import mean
+from dotenv import load_dotenv
 
-# ============== YOUR PWS CONFIG ==============
-API_KEY = "YOUR_WU_PWS_API_KEY"
-STATION_ID = "YOUR_STATION_ID"
-DISPLAY_NAME = "Your Weather"
-NEIGHBORHOOD = "Your Neighborhood"
-UNITS = "e"
+load_dotenv()  # Load .env file if present
+
+# ============== YOUR PWS CONFIG (from .env or environment) ==============
+API_KEY = os.getenv("WU_API_KEY", "YOUR_WU_PWS_API_KEY")
+STATION_ID = os.getenv("WU_STATION_ID", "YOUR_STATION_ID")
+DISPLAY_NAME = os.getenv("DISPLAY_NAME", "Your Weather")
+NEIGHBORHOOD = os.getenv("NEIGHBORHOOD", "Your Neighborhood")
+UNITS = os.getenv("UNITS", "e")
 API_BASE = "https://api.weather.com/v2/pws"
+
+if API_KEY == "YOUR_WU_PWS_API_KEY" or STATION_ID == "YOUR_STATION_ID":
+    print("WARNING: Using placeholder API key or station ID. Set WU_API_KEY and WU_STATION_ID in .env or environment variables.")
 
 # ============== FLASK ==============
 app = Flask(__name__, template_folder="templates")
@@ -176,15 +182,15 @@ def api_summary():
 
 # ============== MAIN ==============
 if __name__ == "__main__":
+    host = os.getenv("HOST", "0.0.0.0")
+    port = int(os.getenv("PORT", 5000))
     print("╔════════════════════════════════════════════════════════════╗")
     print(f"║  {DISPLAY_NAME}  •  CYBERPWS UPLINK  |  {STATION_ID}          ║")
     print("║  Neon. Data. No corporate bullshit.                        ║")
     print("╚════════════════════════════════════════════════════════════╝")
     print(f"Station : {STATION_ID} ({DISPLAY_NAME})")
+    print(f"Binding : {host}:{port}")
     print("IMPORTANT: For Chrome PWAs and to avoid cookie warnings,")
-    print("           access via HTTPS only (see Caddy reverse proxy instructions).")
-    print(f"Binding : 127.0.0.1:5000 (localhost only - put Caddy in front for HTTPS)")
-    print("Open via Tailscale (HTTPS recommended): https://YOUR-TAILSCALE-HOST")
-    print("             or https://your-full-magic-dns.ts.net")
+    print("           run behind HTTPS (Caddy + Tailscale recommended).")
     print("Ctrl-C to stop.\n")
-    app.run(host="127.0.0.1", port=5000, debug=False, threaded=True)
+    app.run(host=host, port=port, debug=False, threaded=True)
