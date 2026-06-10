@@ -1,0 +1,36 @@
+# Caddy configuration for the WY6Y Weather dashboard (example)
+# 
+# Prerequisites:
+# 1. Place Tailscale certs in /etc/caddy/certs/
+#    (generated with: tailscale cert your-hostname.ts.net )
+# 2. The cyberpws Flask app must be running on 127.0.0.1:5000
+#    (managed by the user service: systemctl --user restart cyberpws)
+#
+# Install: sudo apt install caddy
+# Deploy:  sudo cp Caddyfile.example /etc/caddy/Caddyfile
+#          sudo systemctl restart caddy
+#
+# Management:
+#   sudo systemctl status caddy
+#   sudo systemctl restart caddy
+#   sudo journalctl -u caddy -f
+
+{
+    # Disable Caddy's automatic HTTPS (ACME/LetsEncrypt).
+    # We are providing our own certificates from `tailscale cert`.
+    # This prevents noisy warnings about trying to obtain certs for
+    # the short hostname.
+    auto_https off
+}
+
+# Primary site block using your full Tailscale MagicDNS name.
+# The certificate should match this name.
+your-hostname.ts.net {
+    reverse_proxy 127.0.0.1:5000
+    tls /etc/caddy/certs/your-hostname.ts.net.crt /etc/caddy/certs/your-hostname.ts.net.key
+}
+
+# Redirect short hostname to the full name (optional).
+YOUR-SHORT-NAME {
+    redir https://your-hostname.ts.net{uri} permanent
+}
