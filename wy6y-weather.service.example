@@ -1,0 +1,16 @@
+[Unit]
+Description=WY6Y Weather (CyberPWS / WeatherThief)
+After=network-online.target mosquitto.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=wy6y
+WorkingDirectory=/home/wy6y/cyberpws-fresh
+EnvironmentFile=/home/wy6y/cyberpws-fresh/.env
+ExecStart=/usr/bin/python3 /home/wy6y/cyberpws-fresh/app.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

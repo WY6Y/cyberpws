@@ -1,0 +1,1203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#00f0ff">
+  <meta name="color-scheme" content="dark">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="WY6Y WX">
+  <meta name="application-name" content="WY6Y WX">
+  <meta name="format-detection" content="telephone=no">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" href="/static/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+  <title>WY6Y Weather • WeatherThief</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&amp;family=VT323&amp;display=swap');
+
+    :root {
+      --neon-cyan: #00f0ff;
+      --neon-green: #00ff9f;
+      --neon-magenta: #ff00aa;
+      --neon-yellow: #ffff00;
+      --bg: #050505;
+    }
+
+    body {
+      font-family: "Share Tech Mono", "VT323", ui-monospace, monospace;
+      background: #050505;
+      color: #c0c0c0;
+      min-height: 100dvh;
+      height: auto;
+      overflow-y: auto;
+      overflow-x: hidden;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior-y: contain;
+      padding-bottom: env(safe-area-inset-bottom, 12px);
+    }
+
+    .cyber-grid {
+      background-image: 
+        linear-gradient(rgba(0, 240, 255, 0.06) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 240, 255, 0.06) 1px, transparent 1px);
+      background-size: 32px 32px;
+    }
+
+    .neon-cyan { color: var(--neon-cyan); text-shadow: 0 0 8px var(--neon-cyan); }
+    .neon-green { color: var(--neon-green); text-shadow: 0 0 8px var(--neon-green); }
+    .neon-magenta { color: var(--neon-magenta); text-shadow: 0 0 8px var(--neon-magenta); }
+    .neon-yellow { color: var(--neon-yellow); text-shadow: 0 0 8px var(--neon-yellow); }
+
+    .hud-border {
+      border: 1px solid rgba(0, 240, 255, 0.3);
+      box-shadow: 
+        0 0 0 1px rgba(0, 240, 255, 0.1),
+        0 0 12px rgba(0, 240, 255, 0.15),
+        inset 0 0 12px rgba(0, 240, 255, 0.05);
+    }
+
+    .neon-glow-cyan { box-shadow: 0 0 12px #00f0ff, 0 0 24px #00f0ff; }
+    .neon-glow-green { box-shadow: 0 0 12px #00ff9f, 0 0 24px #00ff9f; }
+    .neon-glow-magenta { box-shadow: 0 0 12px #ff00aa, 0 0 24px #ff00aa; }
+
+    .section-title {
+      font-size: 0.75rem;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      opacity: 0.7;
+      border-bottom: 1px solid rgba(0, 240, 255, 0.2);
+      padding-bottom: 2px;
+      margin-bottom: 8px;
+    }
+
+    .big-temp {
+      font-size: 7.5rem;
+      line-height: 1;
+      font-weight: 700;
+      letter-spacing: -8px;
+      font-family: "VT323", monospace;
+    }
+
+    .metric-value {
+      font-size: 2.25rem;
+      line-height: 1;
+      font-weight: 700;
+      font-family: "VT323", monospace;
+    }
+
+    .data-card {
+      background: #0a0a0f;
+      transition: all 0.2s cubic-bezier(0.23, 1, 0.32, 1);
+    }
+
+    .data-card:hover {
+      border-color: rgba(0, 240, 255, 0.6);
+      box-shadow: 0 0 0 1px rgba(0, 240, 255, 0.3);
+    }
+
+    .scanlines {
+      position: relative;
+      overflow: visible !important;  /* allow scrolling; overlay is now handled by fixed pseudo */
+    }
+
+    @keyframes scan {
+      0% { background-position: 0 0; }
+      100% { background-position: 0 200px; }
+    }
+
+    .glitch {
+      animation: glitch 0.4s linear;
+    }
+
+    @keyframes glitch {
+      0% { transform: translate(0); }
+      20% { transform: translate(-2px, 2px); }
+      40% { transform: translate(2px, -2px); }
+      60% { transform: translate(-1px, 1px); }
+      80% { transform: translate(1px, -1px); }
+      100% { transform: translate(0); }
+    }
+
+    .terminal {
+      font-family: "Share Tech Mono", monospace;
+      background: #000000;
+      border: 1px solid rgba(0, 255, 159, 0.2);
+      color: #00ff9f;
+      font-size: 0.85rem;
+      line-height: 1.25;
+    }
+
+    .neon-button {
+      background: transparent;
+      border: 1px solid #00f0ff;
+      color: #00f0ff;
+      transition: all 0.1s ease;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      font-size: 0.7rem;
+    }
+    .neon-button:hover {
+      background: #00f0ff;
+      color: #050505;
+      box-shadow: 0 0 15px #00f0ff;
+    }
+    .neon-button:active {
+      transform: scale(0.97);
+    }
+
+    .danger {
+      color: #ff3366;
+      text-shadow: 0 0 10px #ff3366;
+      animation: danger-pulse 2s infinite;
+    }
+
+    .chart-container {
+      background: #0a0a0f;
+      border: 1px solid rgba(0, 240, 255, 0.15);
+    }
+
+    .hud-label {
+      font-size: 0.65rem;
+      letter-spacing: 2px;
+      opacity: 0.6;
+    }
+
+    .value-unit {
+      font-size: 0.9rem;
+      opacity: 0.6;
+      margin-left: 4px;
+    }
+
+    .wind-arrow {
+      transition: transform 0.6s cubic-bezier(0.23, 1.0, 0.32, 1);
+      filter: drop-shadow(0 0 6px #00f0ff);
+    }
+
+    .status-dot {
+      animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+
+    .data-row {
+      border-bottom: 1px dotted rgba(0,255,159,0.15);
+    }
+
+    .cyber-title {
+      font-family: "VT323", monospace;
+      letter-spacing: 4px;
+    }
+
+    /* === SCROLLABILITY & iOS/DESKTOP FIXES === */
+    html {
+      height: auto !important;
+      min-height: 100dvh !important;
+      scroll-behavior: smooth;
+    }
+
+    body {
+      min-height: 100dvh !important;
+      height: auto !important;
+      overflow-y: auto !important;
+      overflow-x: hidden !important;
+      position: relative;
+      -webkit-overflow-scrolling: touch !important; /* iOS momentum scrolling */
+      overscroll-behavior-y: contain;
+      padding-top: env(safe-area-inset-top, 0px);
+      padding-left: env(safe-area-inset-left, 0px);
+      padding-right: env(safe-area-inset-right, 0px);
+      padding-bottom: env(safe-area-inset-bottom, 12px);
+      touch-action: manipulation;
+    }
+
+    @media (display-mode: standalone) {
+      body { background: #050505; }
+      .pwa-install-hint { display: none !important; }
+    }
+
+    /* Make the scanlines a fixed viewport overlay so tall content can scroll underneath without clipping */
+    .scanlines::after {
+      content: "";
+      position: fixed !important;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 100vh;
+      background: linear-gradient(
+        transparent 50%,
+        rgba(0, 240, 255, 0.025) 50%
+      );
+      background-size: 100% 4px;
+      pointer-events: none;
+      animation: scan 4s linear infinite;
+      z-index: 2;
+      mix-blend-mode: screen;
+    }
+
+    /* Responsive big temperature so it doesn't horizontally cutoff on small screens */
+    .big-temp {
+      font-size: clamp(3.5rem, 18vw, 7.5rem) !important;
+      line-height: 1;
+    }
+
+    /* Ensure the main content wrapper can grow vertically and the page scrolls when needed */
+    .max-w-\[1480px\] {
+      min-height: auto !important;
+      height: auto !important;
+      padding-bottom: 2rem;
+    }
+
+    /* Prevent any child grids/flex from creating their own hard height limits that block scroll */
+    .grid, .flex {
+      min-height: 0;
+    }
+
+    .units-toggle button.active {
+      background: rgba(0, 255, 159, 0.2);
+      color: #00ff9f;
+    }
+
+    /* Extra safety: make sure no parent clips the scroll */
+    #root, main, .max-w-\[1480px\] > * {
+      overflow: visible;
+    }
+  </style>
+</head>
+<body class="bg-[#050505] text-[#c0c0c0] cyber-grid scanlines overflow-x-hidden">
+  <div class="max-w-[1480px] mx-auto px-6 py-5">
+    <!-- HEADER -->
+    <div class="flex items-center justify-between mb-5 border-b border-white/10 pb-4">
+      <div>
+        <div class="flex items-center gap-x-3">
+          <div class="text-4xl font-bold tracking-[6px] cyber-title neon-cyan">WY6Y WEATHER</div>
+          <div class="text-xs px-3 py-1 border border-[#00ff9f]/40 text-[#00ff9f] tracking-[2px]">v0.8.5</div>
+        </div>
+        <div class="text-[10px] text-[#00ff9f]/60 -mt-1">PERSONAL WEATHER UPLINK • NO CORPORATE SHIT</div>
+      </div>
+
+      <div class="text-right">
+        <div class="text-sm neon-green tracking-[3px] font-bold">{{ display_name }} • {{ neighborhood | upper }}</div>
+        <div class="text-[10px] opacity-60">WEATHERTHIEF • ACURITE 5-IN-1 • rtl_433 UPLINK</div>
+      </div>
+
+      <div class="text-right min-w-[180px]">
+        <!-- Units toggle -->
+        <div class="units-toggle flex text-xs border border-[#00ff9f]/30 rounded overflow-hidden mb-1">
+          <button id="units-imperial" onclick="setUnits('imperial')" class="px-2 py-0.5 hover:bg-[#00ff9f]/10">°F / mph</button>
+          <button id="units-metric" onclick="setUnits('metric')" class="px-2 py-0.5 hover:bg-[#00ff9f]/10 border-l border-[#00ff9f]/30">°C / kph</button>
+        </div>
+
+        <div id="live-clock" class="font-mono text-2xl neon-cyan tracking-[2px]"></div>
+        <div id="uplink-status" class="text-[10px] flex items-center justify-end gap-x-1.5">
+          <span class="inline-block w-2 h-2 bg-[#00ff9f] rounded-full status-dot"></span>
+          <span class="text-[#00ff9f] tracking-widest text-xs">UPLINK NOMINAL</span>
+        </div>
+        <button id="pwa-install-btn" class="pwa-install-hint hidden mt-1 neon-button px-2 py-0.5 text-[9px]">ADD TO HOME SCREEN</button>
+      </div>
+    </div>
+
+    <!-- MAIN TELEMETRY -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+      
+      <!-- HERO TEMP -->
+      <div class="lg:col-span-5 xl:col-span-5 hud-border bg-[#0a0a0f] p-6 scanlines rounded-sm">
+        <div class="flex justify-between items-start mb-1">
+          <div>
+            <div class="hud-label">AMBIENT / THERMAL</div>
+            <div id="obs-time" class="text-xs opacity-50"></div>
+          </div>
+          <div id="vibe-badge" 
+               class="px-3 py-0.5 text-xs border border-[#ff00aa]/60 text-[#ff00aa] tracking-widest self-start">
+            MUGGY INFERNO
+          </div>
+        </div>
+
+        <div class="flex items-baseline gap-x-2 mt-1">
+          <div id="temp-value" class="big-temp neon-yellow leading-none">96</div>
+          <div id="unit-temp" class="text-5xl text-[#00ff9f]/70">°F</div>
+        </div>
+
+        <div class="mt-1 flex items-center gap-x-3">
+          <div>
+            <span class="text-xs opacity-60">FEELS LIKE</span>
+            <span id="feels-like" class="ml-1 text-4xl font-bold danger">109</span>
+            <span id="unit-feels" class="text-xl opacity-60">°F</span>
+          </div>
+          <div id="heat-warning" 
+               class="hidden text-xs px-2.5 py-px border border-red-500/70 text-red-400 tracking-widest">
+            HEAT INDEX CRITICAL
+          </div>
+        </div>
+
+        <div class="mt-4 grid grid-cols-3 gap-3 text-sm">
+          <div>
+            <div class="hud-label">DEW POINT</div>
+            <div><span id="dewpt" class="metric-value neon-cyan">75</span><span id="unit-dew" class="value-unit">°F</span></div>
+          </div>
+          <div>
+            <div class="hud-label">HUMIDITY</div>
+            <div><span id="humidity" class="metric-value neon-green">51</span><span class="value-unit">%</span></div>
+          </div>
+          <div>
+            <div class="hud-label">PRESSURE</div>
+            <div><span id="pressure" class="metric-value opacity-50">N/A</span><span id="unit-press" class="value-unit opacity-40">no sensor</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- WIND + PRECIP -->
+      <div class="lg:col-span-4 xl:col-span-3 hud-border bg-[#0a0a0f] p-5 rounded-sm flex flex-col">
+        <div class="section-title">WIND VECTOR</div>
+        
+        <div class="flex-1 flex items-center justify-center gap-6">
+          <!-- Wind direction -->
+          <div class="relative w-24 h-24">
+            <svg id="wind-compass" width="96" height="96" class="text-[#00f0ff]">
+              <circle cx="48" cy="48" r="42" fill="none" stroke="currentColor" stroke-opacity="0.15" stroke-width="1"/>
+              <circle cx="48" cy="48" r="32" fill="none" stroke="currentColor" stroke-opacity="0.08" stroke-width="1"/>
+              <!-- Cardinal marks -->
+              <text x="48" y="12" text-anchor="middle" font-size="9" fill="currentColor" opacity="0.4">N</text>
+              <text x="84" y="51" text-anchor="middle" font-size="9" fill="currentColor" opacity="0.4">E</text>
+              <text x="48" y="90" text-anchor="middle" font-size="9" fill="currentColor" opacity="0.4">S</text>
+              <text x="12" y="51" text-anchor="middle" font-size="9" fill="currentColor" opacity="0.4">W</text>
+            </svg>
+            <!-- Arrow -->
+            <div id="wind-arrow-container" class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
+              <div id="wind-arrow" 
+                   class="wind-arrow w-0 h-0 border-l-[14px] border-l-transparent border-r-[14px] border-r-transparent border-b-[28px] border-b-[#00f0ff]"
+                   style="transform: rotate(157deg); filter: drop-shadow(0 0 8px #00f0ff);">
+              </div>
+            </div>
+          </div>
+
+          <div class="flex-1 min-w-0">
+            <div class="text-[10px] opacity-50">SPEED / GUST</div>
+            <div class="flex items-baseline gap-x-1">
+              <span id="wind-speed" class="metric-value neon-cyan">1</span>
+              <span id="unit-wind" class="text-xs opacity-60">mph</span>
+            </div>
+            <div class="text-xs -mt-1">
+              GUST <span id="wind-gust" class="font-bold text-[#ff00aa]">11</span>
+            </div>
+            <div class="mt-2 text-xs">
+              <span class="opacity-60">FROM</span> 
+              <span id="wind-dir-cardinal" class="neon-magenta font-bold text-lg tracking-wider">SSE</span>
+              <span id="wind-dir-deg" class="opacity-50 text-xs ml-1">(157°)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PRECIP + LAST UPDATE -->
+      <div class="lg:col-span-3 xl:col-span-4 hud-border bg-[#0a0a0f] p-5 rounded-sm flex flex-col justify-between">
+        <div>
+          <div class="section-title">PRECIPITATION</div>
+          <div class="flex items-end gap-x-2">
+            <div>
+              <span id="precip-rate" class="metric-value neon-green">0.00</span>
+              <span id="unit-prate" class="text-xs opacity-60">"/hr</span>
+            </div>
+            <div class="pb-1">
+              <span class="text-xs opacity-60">STATION TOTAL</span><br>
+              <span id="precip-total" class="text-3xl font-bold">0.00</span>
+              <span id="unit-ptotal" class="text-xs">" cumulative</span>
+            </div>
+          </div>
+
+          <!-- New: Rate history + intensity for "some rate of precipitation data" -->
+          <div class="mt-2 pt-2 border-t border-white/10">
+            <div class="flex items-baseline gap-x-3 text-xs">
+              <div>
+                <span class="opacity-50">MAX RATE</span><br>
+                <span id="precip-max-rate" class="font-bold">0.00</span>
+                <span id="unit-pmax" class="opacity-60">"/hr</span>
+              </div>
+              <div>
+                <span class="opacity-50">INTENSITY</span><br>
+                <span id="precip-intensity" class="font-bold neon-green">DRY</span>
+              </div>
+            </div>
+            <!-- Compact 24h precip rate sparkline (history from rapid obs) -->
+            <div class="mt-1">
+              <canvas id="precip-spark" height="26" class="w-full"></canvas>
+            </div>
+            <div class="text-[9px] opacity-40 tracking-widest">RATE HISTORY • 24H</div>
+          </div>
+        </div>
+
+        <div class="text-[10px] pt-3 border-t border-white/10 flex justify-between items-center">
+          <div>
+            <span class="opacity-50">LAST TRANSMISSION</span><br>
+            <span id="last-update" class="font-mono text-[#00ff9f]"></span>
+          </div>
+          <button onclick="forceRefresh()" 
+                  class="neon-button px-3 py-1 text-[10px] active:scale-95">FORCE SYNC</button>
+        </div>
+      </div>
+
+      <!-- CHARTS ROW -->
+      <div class="lg:col-span-12 grid grid-cols-1 xl:grid-cols-2 gap-4 mt-1">
+        
+        <!-- TEMP + HUMIDITY CHART -->
+        <div class="chart-container p-4 rounded-sm">
+          <div class="flex justify-between items-baseline mb-2 px-1">
+            <div class="section-title mb-0">THERMAL + MOISTURE • 24H</div>
+            <div class="text-[10px] text-[#00ff9f]/50">WEATHERTHIEF LOG</div>
+          </div>
+          <div class="h-52">
+            <canvas id="temp-hum-chart"></canvas>
+          </div>
+        </div>
+
+        <!-- PRESSURE + WIND CHART -->
+        <div class="chart-container p-4 rounded-sm">
+          <div class="flex justify-between items-baseline mb-2 px-1">
+            <div class="section-title mb-0">BAROMETRIC + WIND • 24H</div>
+            <div class="text-[10px] text-[#ff00aa]/50">WIND TREND</div>
+          </div>
+          <div class="h-52">
+            <canvas id="press-wind-chart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- NEW: OKLAHOMA ALERTS (NWS heat + severe weather) -->
+      <div class="lg:col-span-12 hud-border bg-[#0a0a0f] p-4 rounded-sm" id="alerts-box">
+        <div class="flex items-center justify-between mb-1">
+          <div class="section-title mb-0">OKLAHOMA ALERTS • NWS</div>
+          <div class="text-[10px] text-[#ff00aa]/60">HEAT • TORNADO • SEVERE • FLOOD</div>
+        </div>
+        <div id="alerts-content" class="text-sm">
+          <!-- Populated by JS: list of active warnings or "NO ACTIVE ALERTS" -->
+          <div class="opacity-60">NO ACTIVE ALERTS — STAY FROSTY</div>
+        </div>
+      </div>
+
+      <!-- 24H STATS -->
+      <div class="lg:col-span-12 hud-border bg-[#0a0a0f] p-5 rounded-sm">
+        <div class="section-title">24H TELEMETRY SUMMARY</div>
+        
+        <div id="stats-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-x-4 gap-y-4 text-sm">
+          <!-- Populated by JS -->
+        </div>
+        
+        <div class="mt-4 text-[10px] flex gap-x-4 opacity-70">
+          <div>VIBE: <span id="vibe-text" class="neon-magenta font-bold">MUGGY INFERNO</span></div>
+          <div>PEAK GUST: <span id="peak-gust-stat" class="font-mono">14</span> mph</div>
+        </div>
+      </div>
+
+      <!-- DATA LOG -->
+      <div class="lg:col-span-12 hud-border bg-[#0a0a0f] p-4 rounded-sm">
+        <div class="flex items-center justify-between mb-2">
+          <div class="section-title mb-0">DATA LOG — LAST 12 RAPID FRAMES</div>
+          <div class="text-[10px] text-[#00ff9f]/40">SCROLL TO SEE MORE • AUTO-APPENDS ON REFRESH</div>
+        </div>
+        <div id="data-log" 
+             class="terminal p-3 h-40 overflow-auto font-mono text-[13px] leading-tight whitespace-pre">
+        </div>
+      </div>
+
+    </div>
+
+    <!-- FOOTER -->
+    <div class="mt-6 flex items-center justify-between text-[10px] opacity-40">
+      <div>
+        WEATHERTHIEF MQTT • LIVE rtl_433 • <span id="data-source">local</span> • <span id="fetch-count">0</span> POLLS
+      </div>
+      <div class="flex gap-x-4">
+        <button onclick="toggleGlitch()" class="hover:text-white">GLITCH</button>
+        <a href="https://www.wunderground.com/personal-weather-station/dashboard?ID=YOUR_STATION_ID" target="_blank" 
+           class="hover:text-white">RAW WU</a>
+        <span>PRESS <kbd class="border px-1">R</kbd> TO REFRESH</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Tailwind config - cyberpunk colors
+    function initTailwind() {
+      document.documentElement.style.setProperty('--neon-cyan', '#00f0ff');
+      // Tailwind script already loaded via CDN
+    }
+
+    let tempHumChart = null;
+    let pressWindChart = null;
+    let precipSparkChart = null;   // new small sparkline for precip rate history
+    let fetchCount = 0;
+    let lastRapidData = [];
+    let currentUnits = localStorage.getItem('pws_units') || 'imperial';
+
+    function convert(val, type, toMetric) {
+      if (val == null || val === undefined) return null;
+      if (!toMetric) return val;
+      if (type === 'temp' || type === 'dew' || type === 'feels') {
+        return (val - 32) * 5 / 9;
+      }
+      if (type === 'wind' || type === 'gust') {
+        return val * 1.60934;
+      }
+      if (type === 'press') {
+        return val * 33.8639;
+      }
+      if (type === 'precip') {
+        return val * 25.4;
+      }
+      return val;
+    }
+
+    function getUnit(type, toMetric) {
+      if (!toMetric) {
+        if (type === 'temp' || type === 'dew' || type === 'feels') return '°F';
+        if (type === 'wind' || type === 'gust') return 'mph';
+        if (type === 'press') return 'inHg';
+        if (type === 'precip') return '"';
+      } else {
+        if (type === 'temp' || type === 'dew' || type === 'feels') return '°C';
+        if (type === 'wind' || type === 'gust') return 'kph';
+        if (type === 'press') return 'hPa';
+        if (type === 'precip') return 'mm';
+      }
+      return '';
+    }
+
+    function setUnits(u) {
+      currentUnits = u;
+      localStorage.setItem('pws_units', u);
+      updateUnitsUI();
+      if (window.rawCurrent) updateCurrent(window.rawCurrent, u);
+      if (window.rawRapid) {
+        updateCharts(window.rawRapid, u);
+        updateDataLog(window.rawRapid, u);
+      }
+      if (window.rawSummary) updateSummary(window.rawSummary, u);
+    }
+
+    function updateUnitsUI() {
+      const impBtn = document.getElementById('units-imperial');
+      const metBtn = document.getElementById('units-metric');
+      if (impBtn) impBtn.classList.toggle('active', currentUnits === 'imperial');
+      if (metBtn) metBtn.classList.toggle('active', currentUnits === 'metric');
+    }
+
+    function updateClock() {
+      const el = document.getElementById('live-clock');
+      setInterval(() => {
+        const now = new Date();
+        el.textContent = now.toLocaleTimeString('en-US', { 
+          hour12: false, 
+          hour: '2-digit', 
+          minute: '2-digit', 
+          second: '2-digit' 
+        });
+      }, 1000);
+      // initial
+      const now = new Date();
+      el.textContent = now.toLocaleTimeString('en-US', { 
+        hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' 
+      });
+    }
+
+    function formatTime(ts) {
+      if (!ts) return '—';
+      const d = new Date(ts);
+      return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function windDir(deg) {
+      if (deg == null) return '?';
+      const dirs = ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"];
+      return dirs[Math.floor((deg + 11.25) / 22.5) % 16];
+    }
+
+    async function fetchJSON(url) {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    }
+
+    function updateCurrent(obs, units = 'imperial') {
+      if (!obs || !obs.imperial) return;
+
+      const imp = obs.imperial;
+      const timeStr = obs.obsTimeLocal || '?';
+
+      const toM = units === 'metric';
+      let temp = convert(imp.temp, 'temp', toM);
+      let dew = convert(imp.dewpt, 'dew', toM);
+      let heat = convert(imp.heatIndex, 'feels', toM);
+      let chill = convert(imp.windChill, 'feels', toM);
+      let hum = obs.humidity;
+      let wspd = convert(imp.windSpeed, 'wind', toM);
+      let wgust = convert(imp.windGust, 'gust', toM);
+      let press = convert(imp.pressure, 'press', toM);
+      let prate = convert(imp.precipRate, 'precip', toM);
+      let ptotal = convert(imp.precipTotal, 'precip', toM);
+
+      const uT = getUnit('temp', toM);
+      const uW = getUnit('wind', toM);
+      const uP = getUnit('press', toM);
+      const uPr = getUnit('precip', toM);
+
+      const isDanger = imp.heatIndex != null && imp.heatIndex > 105;
+
+      // set DOM
+      document.getElementById('temp-value').textContent = temp != null ? Math.round(temp) : '--';
+      document.getElementById('feels-like').textContent = (heat != null ? Math.round(heat) : (chill != null ? Math.round(chill) : (temp != null ? Math.round(temp) : '--')));
+      document.getElementById('dewpt').textContent = dew != null ? Math.round(dew) : '--';
+      document.getElementById('humidity').textContent = Math.round(hum);
+      const pressEl = document.getElementById('pressure');
+      const pressUnitEl = document.getElementById('unit-press');
+      if (press == null) {
+        pressEl.textContent = 'N/A';
+        pressEl.classList.add('opacity-50');
+        if (pressUnitEl) { pressUnitEl.textContent = 'no sensor'; pressUnitEl.classList.add('opacity-40'); }
+      } else {
+        pressEl.textContent = press.toFixed(2);
+        pressEl.classList.remove('opacity-50');
+        if (pressUnitEl) { pressUnitEl.textContent = uP; pressUnitEl.classList.remove('opacity-40'); }
+      }
+
+      document.getElementById('obs-time').textContent = timeStr;
+
+      // Wind
+      document.getElementById('wind-speed').textContent = wspd != null ? Math.round(wspd) : '--';
+      document.getElementById('wind-gust').textContent = wgust != null ? Math.round(wgust) : '--';
+      const dirDeg = obs.winddir || 0;
+      const cardinal = windDir(dirDeg);
+      document.getElementById('wind-dir-cardinal').textContent = cardinal;
+      document.getElementById('wind-dir-deg').textContent = `(${dirDeg}°)`;
+
+      const arrow = document.getElementById('wind-arrow');
+      if (arrow) arrow.style.transform = `rotate(${dirDeg + 180}deg)`;
+
+      // Precip (enhanced with rate history + intensity)
+      document.getElementById('precip-rate').textContent = prate != null ? prate.toFixed(2) : '0.00';
+      document.getElementById('precip-total').textContent = ptotal != null ? ptotal.toFixed(2) : '0.00';
+
+      // Simple OK-style intensity classification (in/hr)
+      const rate = imp.precipRate || 0;
+      let intensity = "DRY";
+      let intClass = "neon-green";
+      if (rate > 0.5) { intensity = "TORRENTIAL"; intClass = "danger"; }
+      else if (rate > 0.3) { intensity = "HEAVY"; intClass = "text-[#ff00aa]"; }
+      else if (rate > 0.1) { intensity = "MODERATE"; intClass = "neon-yellow"; }
+      else if (rate > 0.01) { intensity = "LIGHT"; intClass = "neon-green"; }
+      const pint = document.getElementById('precip-intensity');
+      if (pint) {
+          pint.textContent = intensity;
+          pint.className = `font-bold ${intClass}`;
+      }
+
+      // Units (including new max-rate unit)
+      const ut = document.getElementById('unit-temp'); if (ut) ut.textContent = uT;
+      const ud = document.getElementById('unit-dew'); if (ud) ud.textContent = uT;
+      const uf = document.getElementById('unit-feels'); if (uf) uf.textContent = uT;
+      const uw = document.getElementById('unit-wind'); if (uw) uw.textContent = uW;
+      const upr = document.getElementById('unit-prate'); if (upr) upr.textContent = uPr + '/hr';
+      const upt = document.getElementById('unit-ptotal'); if (upt) upt.textContent = uPr;
+
+      const upm = document.getElementById('unit-pmax'); if (upm) upm.textContent = uPr + '/hr';
+
+      // Last update
+      const last = document.getElementById('last-update');
+      const age = Math.floor((Date.now() - (obs.epoch * 1000 || Date.now())) / 1000);
+      last.textContent = `${formatTime(obs.obsTimeLocal)} (${age}s ago)`;
+
+      // Heat warning
+      const heatBox = document.getElementById('heat-warning');
+      if (heatBox) {
+        if (isDanger) {
+          heatBox.classList.remove('hidden');
+          heatBox.classList.add('danger');
+        } else {
+          heatBox.classList.add('hidden');
+        }
+      }
+
+      // Vibe badge
+      const vibeEl = document.getElementById('vibe-badge');
+      if (vibeEl) {
+        if (isDanger) {
+          vibeEl.textContent = 'THERMAL CRITICAL';
+          vibeEl.className = 'px-3 py-0.5 text-xs border border-red-500 text-red-400 tracking-widest';
+        }
+      }
+    }
+
+    function updateSummary(summary, units = 'imperial') {
+      if (!summary || Object.keys(summary).length === 0) return;
+
+      const toM = units === 'metric';
+      const tmin = convert(summary.temp_min, 'temp', toM);
+      const tmax = convert(summary.temp_max, 'temp', toM);
+      const tavg = convert(summary.temp_avg, 'temp', toM);
+      const pmin = convert(summary.press_min, 'press', toM);
+      const pmax = convert(summary.press_max, 'press', toM);
+      const wavg = convert(summary.wind_avg, 'wind', toM);
+      const gmax = convert(summary.gust_max, 'wind', toM);
+
+      const uT = getUnit('temp', toM);
+      const uP = getUnit('press', toM);
+      const uW = getUnit('wind', toM);
+
+      const grid = document.getElementById('stats-grid');
+      grid.innerHTML = `
+        <div><span class="hud-label">MIN / MAX TEMP</span><br>
+          <span class="font-bold">${tmin != null ? Math.round(tmin) : '--'}${uT} → ${tmax != null ? Math.round(tmax) : '--'}${uT}</span>
+        </div>
+        <div><span class="hud-label">AVG TEMP</span><br>
+          <span class="font-bold">${tavg != null ? Math.round(tavg) : '--'}${uT}</span>
+        </div>
+        <div><span class="hud-label">HUMIDITY RANGE</span><br>
+          <span class="font-bold">${summary.hum_min}% — ${summary.hum_max}%</span>
+        </div>
+        <div><span class="hud-label">PRESSURE</span><br>
+          <span class="font-bold opacity-50">${pmin != null && pmax != null ? `${pmin.toFixed(2)}${uP} — ${pmax.toFixed(2)}${uP}` : 'N/A (no sensor)'}</span>
+          ${summary.press_trend ? `<span class="text-xs opacity-60">(${summary.press_trend})</span>` : ''}
+        </div>
+        <div><span class="hud-label">AVG WIND</span><br>
+          <span class="font-bold">${wavg != null ? Math.round(wavg) : '--'}${uW}</span>
+        </div>
+        <div><span class="hud-label">PEAK GUST</span><br>
+          <span class="font-bold">${gmax != null ? Math.round(gmax) : '--'}${uW}</span>
+        </div>
+      `;
+
+      // New precip rate extras from summary (max + sparkline history)
+      const pmaxEl = document.getElementById('precip-max-rate');
+      if (pmaxEl && summary.precip_max_rate != null) {
+          const pmax = convert(summary.precip_max_rate, 'precip', toM);
+          pmaxEl.textContent = pmax != null ? pmax.toFixed(2) : '0.00';
+      }
+      // Draw or update small precip rate sparkline
+      drawPrecipSpark(summary.precip_rate_history || [], toM);
+
+      document.getElementById('vibe-text').textContent = summary.vibe || 'NOMINAL';
+      document.getElementById('peak-gust-stat').textContent = summary.gust_max || '—';
+
+      const badge = document.getElementById('vibe-badge');
+      if (summary.vibe) {
+        badge.textContent = summary.vibe;
+        if (summary.vibe.includes('INFERNO') || summary.vibe.includes('HOT')) {
+          badge.className = 'px-3 py-0.5 text-xs border border-red-500/70 text-red-400 tracking-widest';
+        } else {
+          badge.className = 'px-3 py-0.5 text-xs border border-[#ff00aa]/60 text-[#ff00aa] tracking-widest';
+        }
+      }
+    }
+
+    function updateCharts(rapid, units = 'imperial') {
+      if (!rapid || rapid.length === 0) return;
+      lastRapidData = rapid;
+
+      const toM = units === 'metric';
+      const labels = [];
+      const temps = [];
+      const hums = [];
+      const press = [];
+      const winds = [];
+
+      const step = Math.max(1, Math.floor(rapid.length / 55));
+      const slice = rapid.slice().reverse();
+
+      for (let i = 0; i < slice.length; i += step) {
+        const o = slice[i];
+        if (!o) continue;
+        const imp = o.imperial || {};
+        const t = o.obsTimeLocal ? o.obsTimeLocal.split(' ')[1]?.slice(0,5) : '';
+        labels.push(t || '');
+        let tval = imp.tempAvg || imp.tempHigh;
+        temps.push(tval != null ? convert(tval, 'temp', toM) : null);
+        hums.push(o.humidityAvg || o.humidityHigh || null);
+        let pval = imp.pressureMax || imp.pressure;
+        press.push(pval != null ? convert(pval, 'press', toM) : null);
+        let wval = imp.windspeedAvg || imp.windspeedHigh;
+        winds.push(wval != null ? convert(wval, 'wind', toM) : null);
+      }
+
+      const tempLabel = toM ? 'Temp °C' : 'Temp °F';
+      const humLabel = 'Humidity %';
+      const pressLabel = toM ? 'Pressure hPa' : 'Pressure inHg';
+      const windLabel = toM ? 'Wind kph' : 'Wind mph';
+
+      const ctx1 = document.getElementById('temp-hum-chart');
+      if (tempHumChart) tempHumChart.destroy();
+
+      tempHumChart = new Chart(ctx1, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: tempLabel,
+              data: temps,
+              borderColor: '#ffff00',
+              borderWidth: 2,
+              tension: 0.2,
+              pointRadius: 0,
+              yAxisID: 'y',
+            },
+            {
+              label: humLabel,
+              data: hums,
+              borderColor: '#00ff9f',
+              borderWidth: 1.5,
+              tension: 0.3,
+              pointRadius: 0,
+              yAxisID: 'y1',
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false } },
+          scales: {
+            x: { grid: { color: 'rgba(0,240,255,0.08)', tickLength: 0 }, ticks: { color: '#555', font: { size: 9 } } },
+            y: { position: 'left', grid: { color: 'rgba(255,255,0,0.08)' }, ticks: { color: '#888', font: { size: 9 } } },
+            y1: { position: 'right', grid: { drawOnChartArea: false }, ticks: { color: '#00ff9f', font: { size: 9 } }, min: 30, max: 100 }
+          }
+        }
+      });
+
+      const ctx2 = document.getElementById('press-wind-chart');
+      if (pressWindChart) pressWindChart.destroy();
+
+      pressWindChart = new Chart(ctx2, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: pressLabel,
+              data: press,
+              borderColor: '#00f0ff',
+              borderWidth: 2,
+              tension: 0.1,
+              pointRadius: 0,
+              yAxisID: 'y',
+            },
+            {
+              label: windLabel,
+              data: winds,
+              type: 'bar',
+              backgroundColor: 'rgba(255, 0, 170, 0.35)',
+              borderColor: '#ff00aa',
+              borderWidth: 1,
+              yAxisID: 'y1',
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { grid: { color: 'rgba(0,240,255,0.08)' }, ticks: { color: '#555', font: { size: 9 } } },
+            y: { position: 'left', grid: { color: 'rgba(0,240,255,0.08)' }, ticks: { color: '#00f0ff', font: { size: 9 } } },
+            y1: { position: 'right', grid: { drawOnChartArea: false }, ticks: { color: '#ff00aa', font: { size: 9 } } }
+          }
+        }
+      });
+    }
+
+    function updateDataLog(rapid, units = 'imperial') {
+      const log = document.getElementById('data-log');
+      log.innerHTML = '';
+
+      const toM = units === 'metric';
+      const uT = getUnit('temp', toM);
+      const uW = getUnit('wind', toM);
+      const uP = getUnit('press', toM);
+      const uPr = getUnit('precip', toM);
+
+      const recent = rapid.slice(-12).reverse();
+      recent.forEach(o => {
+        const imp = o.imperial || {};
+        const t = o.obsTimeLocal ? o.obsTimeLocal.split(' ')[1] : '??:??';
+        let tval = imp.tempAvg || imp.tempHigh;
+        tval = tval != null ? convert(tval, 'temp', toM) : null;
+        const tStr = tval != null ? tval.toFixed(0) : '??';
+        const hval = o.humidityAvg || o.humidityHigh;
+        const hStr = hval != null ? hval : '??';
+        let wval = imp.windspeedAvg || imp.windspeedHigh || 0;
+        wval = convert(wval, 'wind', toM);
+        const wStr = wval.toFixed(0);
+        let pval = imp.pressure || 0;
+        pval = convert(pval, 'press', toM);
+        const pStr = pval.toFixed(2);
+        // Include precip rate in the log (new rate data visibility)
+        let pr = imp.precipRate || 0;
+        pr = convert(pr, 'precip', toM);
+        const prStr = pr.toFixed(2);
+        const line = `[${t}] T:${tStr}${uT} H:${hStr}% W:${wStr}${uW} P:${pStr}${uP} R:${prStr}${uPr}/h`;
+        const div = document.createElement('div');
+        div.textContent = line;
+        div.className = 'data-row py-px';
+        log.appendChild(div);
+      });
+    }
+
+    // Small sparkline for precip rate history (new feature)
+    function drawPrecipSpark(history, toMetric) {
+      const ctx = document.getElementById('precip-spark');
+      if (!ctx || !history || history.length === 0) return;
+
+      // Convert if metric
+      const data = history.map(v => convert(v, 'precip', toMetric));
+
+      if (precipSparkChart) precipSparkChart.destroy();
+
+      precipSparkChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: data.map((_, i) => ''),  // no labels for compact spark
+          datasets: [{
+            data: data,
+            backgroundColor: 'rgba(0, 255, 159, 0.6)',
+            borderColor: '#00ff9f',
+            borderWidth: 1,
+            barThickness: 2,
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false }, tooltip: { displayColors: false } },
+          scales: {
+            x: { display: false, grid: { display: false } },
+            y: { display: false, grid: { display: false }, beginAtZero: true }
+          },
+          elements: { bar: { borderRadius: 0 } }
+        }
+      });
+    }
+
+    // New: NWS alerts (heat + severe weather for Oklahoma)
+    function updateAlerts(alerts) {
+      const box = document.getElementById('alerts-box');
+      const content = document.getElementById('alerts-content');
+      if (!box || !content) return;
+
+      if (!alerts || alerts.length === 0) {
+          content.innerHTML = `<div class="opacity-60">NO ACTIVE ALERTS — STAY FROSTY</div>`;
+          box.style.borderColor = 'rgba(0, 240, 255, 0.15)';
+          return;
+      }
+
+      let html = '';
+      alerts.forEach(a => {
+          const isWarning = (a.severity || '').toUpperCase().includes('SEVERE') || 
+                            (a.event || '').toUpperCase().includes('WARNING') ||
+                            (a.event || '').toUpperCase().includes('TORNADO');
+          const color = isWarning ? 'text-[#ff3366] border-red-500/70' : 'text-[#ffff00] border-[#ff00aa]/60';
+          const badge = isWarning ? 'WARNING' : (a.severity || 'ALERT');
+          html += `
+            <div class="mb-2 p-2 border ${color} rounded-sm text-xs">
+              <div class="font-bold tracking-wider">${a.event} <span class="opacity-60">• ${badge}</span></div>
+              <div class="opacity-80">${a.headline}</div>
+              ${a.expires ? `<div class="text-[10px] opacity-50">EXPIRES: ${new Date(a.expires).toLocaleString()}</div>` : ''}
+              ${a.description ? `<div class="mt-1 opacity-70">${a.description}</div>` : ''}
+            </div>`;
+      });
+      content.innerHTML = html;
+      box.style.borderColor = 'rgba(255, 0, 170, 0.4)';  // highlight when alerts present
+    }
+
+    const POLL_MS = 30000; // 30s — WeatherThief pushes on each AcuRite packet
+
+    async function loadAll() {
+      try {
+        const dashRes = await fetchJSON('/api/dashboard');
+        if (!dashRes.success) throw new Error(dashRes.error || 'dashboard fetch failed');
+
+        const { current, rapid, summary, alerts, source } = dashRes.data;
+        const srcEl = document.getElementById('data-source');
+        if (srcEl) srcEl.textContent = source || dashRes.cache?.source || 'weatherthief';
+
+        if (current) {
+          updateCurrent(current, currentUnits);
+          window.lastCurrent = current;
+          window.rawCurrent = current;
+        }
+        if (rapid) {
+          updateCharts(rapid, currentUnits);
+          updateDataLog(rapid, currentUnits);
+          window.rawRapid = rapid;
+        }
+        if (summary) {
+          updateSummary(summary, currentUnits);
+          window.rawSummary = summary;
+        }
+        if (alerts) {
+          updateAlerts(alerts);
+        }
+
+        const localAge = dashRes.data?.local?.last_age_sec;
+        const status = document.getElementById('uplink-status');
+        if (status && localAge != null) {
+          status.innerHTML = `
+            <span class="inline-block w-2 h-2 bg-[#00ff9f] rounded-full status-dot"></span>
+            <span class="text-[#00ff9f] tracking-widest text-xs">WEATHERTHIEF LIVE • ${localAge}s</span>
+          `;
+        }
+
+        fetchCount++;
+        document.getElementById('fetch-count').textContent = fetchCount;
+
+        // subtle success flash on header
+        const header = document.querySelector('.cyber-title');
+        if (header) {
+          header.classList.add('neon-green');
+          setTimeout(() => header.classList.remove('neon-green'), 700);
+        }
+      } catch (e) {
+        console.error('Load failed', e);
+        const status = document.getElementById('uplink-status');
+        status.innerHTML = `<span class="text-red-400">LINK LOST — ${e.message}</span>`;
+      }
+    }
+
+    function forceRefresh() {
+      const status = document.getElementById('uplink-status');
+      status.innerHTML = `<span class="text-[#ffff00]">SYNCING...</span>`;
+      loadAll().finally(() => {
+        setTimeout(() => {
+          status.innerHTML = `
+            <span class="inline-block w-2 h-2 bg-[#00ff9f] rounded-full status-dot"></span>
+            <span class="text-[#00ff9f] tracking-widest text-xs">UPLINK NOMINAL</span>
+          `;
+        }, 600);
+      });
+    }
+
+
+
+    function copyExport() {
+      const payload = {
+        station: "KOKEDMON585",
+        exported_at: new Date().toISOString(),
+        current: window.lastCurrent || null,
+        rapid: lastRapidData.slice(-20),
+      };
+      navigator.clipboard.writeText(JSON.stringify(payload, null, 2)).then(() => {
+        const orig = event.target ? event.target.textContent : '';
+        const btns = document.querySelectorAll('button');
+        btns.forEach(b => { if (b.textContent.includes('EXPORT')) b.textContent = 'COPIED!'; });
+        setTimeout(() => {
+          btns.forEach(b => { if (b.textContent.includes('COPIED')) b.textContent = 'EXPORT JSON'; });
+        }, 1400);
+      }).catch(() => {
+        // fallback
+        prompt("Copy this JSON:", JSON.stringify(payload, null, 2));
+      });
+    }
+
+    function toggleGlitch() {
+      const main = document.querySelector('.big-temp');
+      if (!main) return;
+      main.classList.add('glitch');
+      setTimeout(() => main.classList.remove('glitch'), 450);
+
+      // also glitch the title
+      const title = document.querySelector('.cyber-title');
+      if (title) {
+        title.classList.add('glitch');
+        setTimeout(() => title.classList.remove('glitch'), 380);
+      }
+    }
+
+    function setupKeyboard() {
+      document.addEventListener('keydown', (e) => {
+        if (e.key.toLowerCase() === 'r') {
+          e.preventDefault();
+          forceRefresh();
+        }
+        if (e.key.toLowerCase() === 'g') {
+          toggleGlitch();
+        }
+      });
+    }
+
+    let deferredInstallPrompt = null;
+
+    function setupPWA() {
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch((e) => console.warn('SW register failed', e));
+      }
+
+      const installBtn = document.getElementById('pwa-install-btn');
+      window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        deferredInstallPrompt = e;
+        if (installBtn) installBtn.classList.remove('hidden');
+      });
+
+      if (installBtn) {
+        installBtn.addEventListener('click', async () => {
+          if (!deferredInstallPrompt) return;
+          deferredInstallPrompt.prompt();
+          await deferredInstallPrompt.userChoice;
+          deferredInstallPrompt = null;
+          installBtn.classList.add('hidden');
+        });
+      }
+
+      if (window.matchMedia('(display-mode: standalone)').matches) {
+        document.title = 'WY6Y WX';
+      }
+    }
+
+    async function init() {
+      initTailwind();
+      updateClock();
+      setupKeyboard();
+      setupPWA();
+      updateUnitsUI();
+
+      // Prime the pump
+      await loadAll();
+
+      setInterval(loadAll, POLL_MS);
+
+      // One time local probe attempt (non blocking)
+      setTimeout(() => {
+        const el = document.getElementById('local-status');
+        if (el && el.textContent.includes('OFFLINE')) {
+          // silent attempt
+        }
+      }, 2200);
+
+      // Store last current for export
+      window.addEventListener('load', () => {
+        // will be populated on first loadAll
+      });
+
+      // Easter egg: click the big temp 5 times fast for heavy glitch
+      let clicks = 0;
+      const tempEl = document.getElementById('temp-value');
+      if (tempEl) {
+        tempEl.addEventListener('click', () => {
+          clicks++;
+          if (clicks >= 5) {
+            clicks = 0;
+            for (let i = 0; i < 3; i++) {
+              setTimeout(() => toggleGlitch(), i * 180);
+            }
+          }
+        });
+      }
+
+      console.log('%c[CYBERPWS] Badass dashboard initialized. Uplink live.', 'color:#00ff9f');
+    }
+
+    // Boot
+    window.onload = init;
+  </script>
+</body>
+</html>

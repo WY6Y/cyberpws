@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+.wu_api_key
+weatherthief_history.json
+*.log
+.DS_Store
+*.swp
+.idea/
+.vscode/

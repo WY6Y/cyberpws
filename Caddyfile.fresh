@@ -1,0 +1,24 @@
+{
+	auto_https off
+}
+
+# Main long Tailscale name: serve the weather app at root (bare, like the original working setup)
+wy6ypi5.taile0fc4a.ts.net {
+	tls /etc/caddy/certs/wy6ypi5.taile0fc4a.ts.net.crt /etc/caddy/certs/wy6ypi5.taile0fc4a.ts.net.key
+	reverse_proxy 127.0.0.1:5001
+}
+
+# Convenience short names (WY6Y etc.) — redirect to the bare long name at root.
+# These are the useful aliases you had. No /WX anywhere.
+WY6Y, WY6Y-WX, WY6YPi5 {
+	redir https://wy6ypi5.taile0fc4a.ts.net permanent
+}
+
+http://WY6Y, http://WY6Y-WX, http://WY6YPi5 {
+	redir https://wy6ypi5.taile0fc4a.ts.net permanent
+}
+
+WY6Y-WX, WY6Y {
+	tls /etc/caddy/certs/wy6ypi5.taile0fc4a.ts.net.crt /etc/caddy/certs/wy6ypi5.taile0fc4a.ts.net.key
+	redir https://wy6ypi5.taile0fc4a.ts.net permanent
+}
