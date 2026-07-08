@@ -1,5 +1,16 @@
-const CACHE = 'wy6y-weather-v1';
-const SHELL = ['/', '/manifest.json', '/static/icon-192.png', '/static/icon-512.png', '/static/icon-maskable-512.png', '/static/apple-touch-icon.png', '/static/favicon.ico'];
+const CACHE = 'wy6y-weather-v3';
+// Derive the app's base path from the scope set during registration.
+// scope '/WX/' → base '/WX';  scope '/' → base ''
+const BASE = new URL(self.registration.scope).pathname.replace(/\/$/, '');
+const SHELL = [
+    BASE + '/',
+    BASE + '/manifest.json',
+    '/static/icon-192.png',
+    '/static/icon-512.png',
+    '/static/icon-maskable-512.png',
+    '/static/apple-touch-icon.png',
+    '/static/favicon.ico',
+];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -19,7 +30,11 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   if (event.request.method !== 'GET') return;
 
-  // Live weather data: network first, short offline tolerance
+  // Never intercept the solar dashboard — it has its own PWA + service worker.
+  if (url.pathname === '/solar' || url.pathname.startsWith('/solar/')) {
+    return;
+  }
+
   if (url.pathname.startsWith('/api/')) {
     event.respondWith(
       fetch(event.request)
@@ -29,7 +44,6 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // App shell: stale-while-revalidate for same-origin navigations and static assets
   if (url.origin === location.origin) {
     event.respondWith(
       caches.match(event.request).then((cached) => {

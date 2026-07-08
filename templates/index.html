@@ -343,8 +343,8 @@
             <div><span id="humidity" class="metric-value neon-green">51</span><span class="value-unit">%</span></div>
           </div>
           <div>
-            <div class="hud-label">PRESSURE</div>
-            <div><span id="pressure" class="metric-value opacity-50">N/A</span><span id="unit-press" class="value-unit opacity-40">no sensor</span></div>
+            <div class="hud-label">PRESSURE <span id="pressure-source" class="opacity-50 text-[9px]"></span></div>
+            <div><span id="pressure" class="metric-value">--</span><span id="unit-press" class="value-unit">inHg</span></div>
           </div>
         </div>
       </div>
@@ -396,15 +396,16 @@
       <div class="lg:col-span-3 xl:col-span-4 hud-border bg-[#0a0a0f] p-5 rounded-sm flex flex-col justify-between">
         <div>
           <div class="section-title">PRECIPITATION</div>
-          <div class="flex items-end gap-x-2">
+          <div class="flex items-end gap-x-6">
             <div>
+              <span class="text-xs opacity-60">RATE</span><br>
               <span id="precip-rate" class="metric-value neon-green">0.00</span>
               <span id="unit-prate" class="text-xs opacity-60">"/hr</span>
             </div>
             <div class="pb-1">
-              <span class="text-xs opacity-60">STATION TOTAL</span><br>
-              <span id="precip-total" class="text-3xl font-bold">0.00</span>
-              <span id="unit-ptotal" class="text-xs">" cumulative</span>
+              <span class="text-xs opacity-60">TODAY</span><br>
+              <span id="precip-daily" class="text-3xl font-bold">0.00</span>
+              <span id="unit-ptotal" class="text-xs">" since midnight</span>
             </div>
           </div>
 
@@ -608,6 +609,33 @@
       return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
     }
 
+    function formatHumanAge(secs) {
+      if (!secs || secs < 0) return '—';
+      if (secs < 60) return secs + 's ago';
+      const m = Math.floor(secs / 60);
+      if (m < 60) return m + 'm ago';
+      const h = Math.floor(m / 60);
+      if (h < 24) return h + 'h ' + (m % 60) + 'm ago';
+      const d = Math.floor(h / 24);
+      return d + 'd ' + (h % 24) + 'h ago';
+    }
+
+    function formatLastUpdate(ts, epoch) {
+      if (!ts) return '—';
+      const d = new Date(ts);
+      const now = new Date();
+      let opts = { hour: 'numeric', minute: '2-digit' };
+      let prefix = '';
+      if (d.toDateString() !== now.toDateString()) {
+        prefix = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ';
+        opts.month = 'short';
+        opts.day = 'numeric';
+      }
+      const timeStr = d.toLocaleTimeString('en-US', opts);
+      const age = Math.floor((Date.now() - ((epoch || 0) * 1000 || Date.now())) / 1000);
+      return prefix + timeStr + ' (' + formatHumanAge(age) + ')';
+    }
+
     function windDir(deg) {
       if (deg == null) return '?';
       const dirs = ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"];
@@ -636,7 +664,7 @@
       let wgust = convert(imp.windGust, 'gust', toM);
       let press = convert(imp.pressure, 'press', toM);
       let prate = convert(imp.precipRate, 'precip', toM);
-      let ptotal = convert(imp.precipTotal, 'precip', toM);
+      let pdaily = convert(imp.precipDaily ?? imp.precipTotal, 'precip', toM);
 
       const uT = getUnit('temp', toM);
       const uW = getUnit('wind', toM);
@@ -652,14 +680,20 @@
       document.getElementById('humidity').textContent = Math.round(hum);
       const pressEl = document.getElementById('pressure');
       const pressUnitEl = document.getElementById('unit-press');
+      const pressSrcEl = document.getElementById('pressure-source');
       if (press == null) {
         pressEl.textContent = 'N/A';
         pressEl.classList.add('opacity-50');
         if (pressUnitEl) { pressUnitEl.textContent = 'no sensor'; pressUnitEl.classList.add('opacity-40'); }
+        if (pressSrcEl) pressSrcEl.textContent = '';
       } else {
         pressEl.textContent = press.toFixed(2);
         pressEl.classList.remove('opacity-50');
         if (pressUnitEl) { pressUnitEl.textContent = uP; pressUnitEl.classList.remove('opacity-40'); }
+        if (pressSrcEl) {
+          const st = obs.pressure_station || 'NWS';
+          pressSrcEl.textContent = `• ${st}`;
+        }
       }
 
       document.getElementById('obs-time').textContent = timeStr;
@@ -677,7 +711,7 @@
 
       // Precip (enhanced with rate history + intensity)
       document.getElementById('precip-rate').textContent = prate != null ? prate.toFixed(2) : '0.00';
-      document.getElementById('precip-total').textContent = ptotal != null ? ptotal.toFixed(2) : '0.00';
+      document.getElementById('precip-daily').textContent = pdaily != null ? pdaily.toFixed(2) : '0.00';
 
       // Simple OK-style intensity classification (in/hr)
       const rate = imp.precipRate || 0;
@@ -705,8 +739,16 @@
 
       // Last update
       const last = document.getElementById('last-update');
-      const age = Math.floor((Date.now() - (obs.epoch * 1000 || Date.now())) / 1000);
-      last.textContent = `${formatTime(obs.obsTimeLocal)} (${age}s ago)`;
+      const age = Math.floor((Date.now() - ((obs.epoch || 0) * 1000 || Date.now())) / 1000);
+      last.textContent = formatLastUpdate(obs.obsTimeLocal, obs.epoch);
+      // Mark very stale data
+      if (age > 3600) {
+        last.classList.add('text-[#ff00aa]', 'font-bold');
+        last.title = 'Data is stale — weather receiver offline or no new decodes';
+      } else {
+        last.classList.remove('text-[#ff00aa]', 'font-bold');
+        last.title = '';
+      }
 
       // Heat warning
       const heatBox = document.getElementById('heat-warning');
@@ -756,8 +798,8 @@
         <div><span class="hud-label">HUMIDITY RANGE</span><br>
           <span class="font-bold">${summary.hum_min}% — ${summary.hum_max}%</span>
         </div>
-        <div><span class="hud-label">PRESSURE</span><br>
-          <span class="font-bold opacity-50">${pmin != null && pmax != null ? `${pmin.toFixed(2)}${uP} — ${pmax.toFixed(2)}${uP}` : 'N/A (no sensor)'}</span>
+        <div><span class="hud-label">PRESSURE (NWS)</span><br>
+          <span class="font-bold">${pmin != null && pmax != null ? `${pmin.toFixed(2)}${uP} — ${pmax.toFixed(2)}${uP}` : 'N/A'}</span>
           ${summary.press_trend ? `<span class="text-xs opacity-60">(${summary.press_trend})</span>` : ''}
         </div>
         <div><span class="hud-label">AVG WIND</span><br>
@@ -802,8 +844,13 @@
       const press = [];
       const winds = [];
 
-      const step = Math.max(1, Math.floor(rapid.length / 55));
-      const slice = rapid.slice().reverse();
+      const chartable = rapid.filter(o => {
+        const imp = o.imperial || {};
+        return imp.tempAvg != null || o.humidityAvg != null;
+      });
+      const series = chartable.length ? chartable : rapid;
+      const step = Math.max(1, Math.floor(series.length / 55));
+      const slice = series.slice().reverse();
 
       for (let i = 0; i < slice.length; i += step) {
         const o = slice[i];
@@ -811,14 +858,16 @@
         const imp = o.imperial || {};
         const t = o.obsTimeLocal ? o.obsTimeLocal.split(' ')[1]?.slice(0,5) : '';
         labels.push(t || '');
-        let tval = imp.tempAvg || imp.tempHigh;
+        let tval = imp.tempAvg ?? imp.tempHigh;
         temps.push(tval != null ? convert(tval, 'temp', toM) : null);
-        hums.push(o.humidityAvg || o.humidityHigh || null);
-        let pval = imp.pressureMax || imp.pressure;
+        hums.push(o.humidityAvg ?? o.humidityHigh ?? null);
+        let pval = imp.pressureMax ?? imp.pressure ?? imp.pressureMin;
         press.push(pval != null ? convert(pval, 'press', toM) : null);
-        let wval = imp.windspeedAvg || imp.windspeedHigh;
+        let wval = imp.windspeedAvg ?? imp.windspeedHigh;
         winds.push(wval != null ? convert(wval, 'wind', toM) : null);
       }
+
+      if (!labels.length) return;
 
       const tempLabel = toM ? 'Temp °C' : 'Temp °F';
       const humLabel = 'Humidity %';
@@ -840,6 +889,7 @@
               borderWidth: 2,
               tension: 0.2,
               pointRadius: 0,
+              spanGaps: true,
               yAxisID: 'y',
             },
             {
@@ -849,6 +899,7 @@
               borderWidth: 1.5,
               tension: 0.3,
               pointRadius: 0,
+              spanGaps: true,
               yAxisID: 'y1',
             }
           ]
@@ -880,6 +931,7 @@
               borderWidth: 2,
               tension: 0.1,
               pointRadius: 0,
+              spanGaps: true,
               yAxisID: 'y',
             },
             {
@@ -1128,7 +1180,8 @@
 
     function setupPWA() {
       if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch((e) => console.warn('SW register failed', e));
+        const _swScope = '{{ url_prefix }}/';
+        navigator.serviceWorker.register('/sw.js', { scope: _swScope }).catch((e) => console.warn('SW register failed', e));
       }
 
       const installBtn = document.getElementById('pwa-install-btn');

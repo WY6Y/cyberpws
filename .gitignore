@@ -6,6 +6,7 @@ venv/
 .env
 .wu_api_key
 weatherthief_history.json
+weatherthief_history.json.bad
 *.log
 .DS_Store
 *.swp
