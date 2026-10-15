@@ -6,7 +6,7 @@ Badass cyberpunk web dashboard — live uplink from WeatherThief (rtl_433 / AcuR
 Pure WeatherThief MQTT listener (no Wunderground API).
 """
 
-from flask import Flask, jsonify, send_from_directory, request
+from flask import Flask, jsonify, make_response, send_from_directory, request
 import json
 import math
 import requests
@@ -15,6 +15,9 @@ import threading
 import time
 from datetime import datetime, timezone
 from statistics import mean
+
+import weather_db
+import almanac
 
 try:
     import paho.mqtt.client as mqtt
@@ -29,6 +32,10 @@ UNITS = "e"
 DATA_STALE_SEC = int(os.getenv("DATA_STALE_SEC", "900"))  # stale threshold for local data
 HISTORY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "weatherthief_history.json")
 HISTORY_MAX_AGE = 604800  # keep 7 days of samples for stale bootstrap
+WX_DB_PATH = os.getenv(
+    "WX_DB_PATH",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "weather.db"),
+)
 
 # Station location — EM15fo grid (Edmond / Brasswood, OK)
 GRIDSQUARE = "EM15fo"
@@ -39,10 +46,12 @@ STATION_LON = float(os.getenv("STATION_LON", "-97.5438"))
 ALERTS_TTL = int(os.getenv("NWS_ALERTS_TTL", "300"))   # 5 minutes
 NWS_PRESSURE_TTL = int(os.getenv("NWS_PRESSURE_TTL", "300"))  # 5 minutes
 NWS_USER_AGENT = "wy6y-weather/1.0 (personal PWS EM15fo)"
+RADAR_TTL = int(os.getenv("RADAR_TTL", "180"))  # RainViewer frames ~5–10 min
 
 _alerts_cache = {"data": [], "ts": 0}
 _nws_station_cache = {"id": None, "name": None, "ts": 0}
 _pressure_cache = {"current": None, "history": [], "station": None, "ts": 0}
+_radar_cache = {"data": None, "ts": 0}
 
 # WeatherThief ESP32 rtl_433 uplink (OpenMQTTGateway)
 MQTT_HOST = os.getenv("MQTT_HOST", "127.0.0.1")
@@ -80,8 +89,13 @@ _mqtt_lock = threading.Lock()
 _last_mqtt_rx_ts = 0.0
 _last_rf_enable_ts = 0.0
 _last_mqtt_reconnect_ts = 0.0
+_last_fw_restart_ts = 0.0
 _lwt_was_online = None
 _rf_watchdog_started = False
+_watchdog_attempt = 0
+_watchdog_stage = "idle"  # idle | reinit | restart | paused
+_mqtt_connected = False
+_last_rssi = None
 
 # ============== FLASK ==============
 static_url_path = "/static"
@@ -536,6 +550,602 @@ def _enable_weatherthief_rf(reason: str = "online", *, force: bool = False):
         print(f"[mqtt] RF enable failed: {e}")
 
 
+def _health_payload() -> dict:
+    """Uplink health for dashboard strip — MQTT, RTL decode, watchdog stage."""
+    now = time.time()
+    with _local_lock:
+        last_ts = _local_state.get("last_ts") or 0
+        online = bool(_local_state.get("online"))
+        merged = dict(_local_state.get("merged") or {})
+        last_msg = _local_state.get("last_message")
+    rtl_age = int(now - last_ts) if last_ts else None
+    mqtt_rx_age = int(now - _last_mqtt_rx_ts) if _last_mqtt_rx_ts else None
+    paused = os.path.exists("/tmp/watchdog-pause")
+    stage = "paused" if paused else _watchdog_stage
+    if rtl_age is not None and rtl_age <= 120 and stage not in ("paused",):
+        status = "nominal"
+        status_label = "UPLINK NOMINAL"
+    elif rtl_age is not None and rtl_age <= DATA_STALE_SEC:
+        status = "degraded"
+        status_label = "RTL DEGRADED"
+    elif not _mqtt_connected:
+        status = "down"
+        status_label = "MQTT DOWN"
+    else:
+        status = "stale"
+        status_label = "RTL STALE"
+    if stage == "restart":
+        status = "recovering"
+        status_label = "FW RESTART"
+    elif stage == "reinit":
+        status = "recovering"
+        status_label = "RF REINIT"
+    elif stage == "paused":
+        status_label = "WATCHDOG PAUSED"
+
+    rssi = merged.get("rssi")
+    if rssi is None:
+        rssi = _last_rssi
+
+    return {
+        "status": status,
+        "status_label": status_label,
+        "mqtt_connected": _mqtt_connected,
+        "mqtt_rx_age_sec": mqtt_rx_age,
+        "gateway_online": online,
+        "gateway": GATEWAY_NAME,
+        "rtl_age_sec": rtl_age,
+        "last_decode_ts": last_ts or None,
+        "last_message": last_msg,
+        "watchdog_attempt": _watchdog_attempt,
+        "watchdog_stage": stage,
+        "watchdog_paused": paused,
+        "last_rf_enable_age_sec": int(now - _last_rf_enable_ts) if _last_rf_enable_ts else None,
+        "last_fw_restart_age_sec": int(now - _last_fw_restart_ts) if _last_fw_restart_ts else None,
+        "rssi": rssi,
+        "rssi_delta": WEATHERTHIEF_RSSI_DELTA,
+        "battery_ok": merged.get("battery_ok"),
+        "sensor_id": merged.get("sensor_id"),
+        "db": weather_db.stats(),
+    }
+
+
+def _daily_payload(day: str | None = None) -> dict:
+    """Today's high/low/peak gust from SQLite daily rollup (+ live fill)."""
+    day = day or _local_day_key()
+    row = weather_db.get_daily(day) or {}
+    with _local_lock:
+        merged = dict(_local_state.get("merged") or {})
+    # Live fill if SQLite empty or partial (fresh boot)
+    live_temp = merged.get("temp_f")
+    live_gust = merged.get("wind_gust_mph")
+    if live_gust is None:
+        live_gust = merged.get("wind_mph")
+    live_hum = merged.get("humidity")
+    result = {
+        "day": day,
+        "temp_min": row.get("temp_min"),
+        "temp_max": row.get("temp_max"),
+        "temp_min_ts": row.get("temp_min_ts"),
+        "temp_max_ts": row.get("temp_max_ts"),
+        "humidity_min": row.get("humidity_min"),
+        "humidity_max": row.get("humidity_max"),
+        "wind_gust_max": row.get("wind_gust_max"),
+        "wind_gust_max_ts": row.get("wind_gust_max_ts"),
+        "rain_daily_in": row.get("rain_daily_in") if row.get("rain_daily_in") is not None else merged.get("rain_daily_in"),
+        "samples": row.get("samples") or 0,
+    }
+    if live_temp is not None:
+        if result["temp_min"] is None or live_temp < result["temp_min"]:
+            result["temp_min"] = live_temp
+            result["temp_min_ts"] = int(time.time())
+        if result["temp_max"] is None or live_temp > result["temp_max"]:
+            result["temp_max"] = live_temp
+            result["temp_max_ts"] = int(time.time())
+    if live_gust is not None:
+        if result["wind_gust_max"] is None or live_gust > result["wind_gust_max"]:
+            result["wind_gust_max"] = live_gust
+            result["wind_gust_max_ts"] = int(time.time())
+    if live_hum is not None:
+        if result["humidity_min"] is None or live_hum < result["humidity_min"]:
+            result["humidity_min"] = live_hum
+        if result["humidity_max"] is None or live_hum > result["humidity_max"]:
+            result["humidity_max"] = live_hum
+    return result
+
+
+def _records_payload() -> dict:
+    recs = weather_db.get_records()
+    daily_hist = weather_db.get_daily_history(60)
+    labels = {
+        "temp_max_all": "ALL-TIME HIGH TEMP",
+        "temp_min_all": "ALL-TIME LOW TEMP",
+        "humidity_max_all": "ALL-TIME HIGH HUMIDITY",
+        "humidity_min_all": "ALL-TIME LOW HUMIDITY",
+        "gust_max_all": "ALL-TIME PEAK GUST",
+        "rain_day_max_all": "WETTEST DAY (DAILY RAIN)",
+        "precip_rate_max_all": "MAX PRECIP RATE",
+    }
+    items = []
+    for key, label in labels.items():
+        r = recs.get(key)
+        if not r:
+            continue
+        items.append({
+            "key": key,
+            "label": label,
+            "value": r.get("value"),
+            "ts": r.get("ts"),
+            "day": r.get("day"),
+        })
+    return {
+        "records": items,
+        "by_key": recs,
+        "recent_days": daily_hist,
+        "db": weather_db.stats(),
+    }
+
+
+_almanac_milestone_last_check = 0.0
+
+
+def _maybe_almanac_milestones(force: bool = False) -> list:
+    """Throttle milestone checks; fire rare Almanac Pushovers once per meta key."""
+    global _almanac_milestone_last_check
+    now = time.time()
+    if not force and now - _almanac_milestone_last_check < 600:
+        return []
+    _almanac_milestone_last_check = now
+    try:
+        daily = weather_db.get_daily_history(400)
+        sent = almanac.maybe_notify_milestones(
+            daily,
+            get_meta=weather_db.get_meta,
+            set_meta=weather_db.set_meta,
+            notify=_pushover_notify,
+        )
+        if sent:
+            print(f"[almanac] milestone notify: {', '.join(sent)}")
+        return sent
+    except Exception as e:
+        print(f"[almanac] milestone check failed: {e}")
+        return []
+
+
+SPACE_WX_TTL = int(os.getenv("SPACE_WX_TTL", "300"))  # NOAA SWPC — 5 min is plenty
+_space_wx_cache = {"data": None, "ts": 0.0}
+
+
+def _xray_class_from_flux(flux: float | None) -> str | None:
+    """GOES long X-ray flux → letter class (A/B/C/M/X)."""
+    if flux is None or flux <= 0:
+        return None
+    try:
+        import math as _math
+        exp = _math.floor(_math.log10(flux))
+        # Classes: A=1e-8, B=1e-7, C=1e-6, M=1e-5, X=1e-4
+        if exp < -8:
+            letter, base = "A", -8
+        elif exp == -8:
+            letter, base = "A", -8
+        elif exp == -7:
+            letter, base = "B", -7
+        elif exp == -6:
+            letter, base = "C", -6
+        elif exp == -5:
+            letter, base = "M", -5
+        else:
+            letter, base = "X", -4
+            if exp > -4:
+                # X10+ style
+                mag = flux / (10 ** -4)
+                return f"X{mag:.1f}".rstrip("0").rstrip(".")
+        mag = flux / (10 ** base)
+        return f"{letter}{mag:.1f}".rstrip("0").rstrip(".")
+    except Exception:
+        return None
+
+
+def _kp_scale_label(kp: float | None) -> tuple[str, str]:
+    """Return (G-scale or quiet label, short plain-English)."""
+    if kp is None:
+        return "—", "unknown"
+    if kp < 5:
+        return "G0", "quiet to unsettled"
+    if kp < 6:
+        return "G1", "minor storm"
+    if kp < 7:
+        return "G2", "moderate storm"
+    if kp < 8:
+        return "G3", "strong storm"
+    if kp < 9:
+        return "G4", "severe storm"
+    return "G5", "extreme storm"
+
+
+def fetch_space_weather(force: bool = False) -> dict:
+    """NOAA SWPC space weather snapshot for the Almanac (Kp, solar wind, X-ray, scales)."""
+    now = time.time()
+    if not force and _space_wx_cache["data"] and now - _space_wx_cache["ts"] < SPACE_WX_TTL:
+        return _space_wx_cache["data"]
+
+    headers = {"User-Agent": NWS_USER_AGENT, "Accept": "application/json"}
+    out: dict = {
+        "ok": False,
+        "source": "NOAA SWPC",
+        "source_url": "https://www.swpc.noaa.gov/",
+        "fetched_ts": int(now),
+    }
+
+    try:
+        # Planetary Kp (1-minute estimated)
+        r = requests.get(
+            "https://services.swpc.noaa.gov/json/planetary_k_index_1m.json",
+            headers=headers,
+            timeout=8,
+        )
+        r.raise_for_status()
+        kp_rows = r.json() or []
+        last = kp_rows[-1] if kp_rows else {}
+        kp_est = last.get("estimated_kp")
+        if kp_est is None:
+            kp_est = last.get("kp_index")
+        try:
+            kp_est = float(kp_est) if kp_est is not None else None
+        except (TypeError, ValueError):
+            kp_est = None
+        g_label, g_plain = _kp_scale_label(kp_est)
+        out["kp"] = {
+            "estimated": kp_est,
+            "kp_index": last.get("kp_index"),
+            "kp_text": last.get("kp"),
+            "time_tag": last.get("time_tag"),
+            "scale": g_label,
+            "scale_plain": g_plain,
+        }
+
+        # Solar wind speed (summary product is small & fast)
+        try:
+            r2 = requests.get(
+                "https://services.swpc.noaa.gov/products/summary/solar-wind-speed.json",
+                headers=headers,
+                timeout=6,
+            )
+            r2.raise_for_status()
+            sw = r2.json()
+            if isinstance(sw, list) and sw:
+                sw = sw[-1]
+            speed = sw.get("proton_speed") if isinstance(sw, dict) else None
+            out["solar_wind"] = {
+                "speed_kms": float(speed) if speed is not None else None,
+                "time_tag": sw.get("time_tag") if isinstance(sw, dict) else None,
+            }
+        except Exception as e:
+            out["solar_wind"] = {"speed_kms": None, "error": str(e)}
+
+        # IMF Bz from RTSW mag (latest active-ish row)
+        try:
+            r3 = requests.get(
+                "https://services.swpc.noaa.gov/json/rtsw/rtsw_mag_1m.json",
+                headers=headers,
+                timeout=8,
+            )
+            r3.raise_for_status()
+            mag_rows = r3.json() or []
+            mag = mag_rows[-1] if mag_rows else {}
+            out["imf"] = {
+                "bt": mag.get("bt"),
+                "bz_gsm": mag.get("bz_gsm"),
+                "time_tag": mag.get("time_tag"),
+                "source": mag.get("source"),
+            }
+        except Exception as e:
+            out["imf"] = {"bz_gsm": None, "error": str(e)}
+
+        # GOES X-ray (0.1-0.8 nm long channel)
+        try:
+            r4 = requests.get(
+                "https://services.swpc.noaa.gov/json/goes/primary/xrays-6-hour.json",
+                headers=headers,
+                timeout=8,
+            )
+            r4.raise_for_status()
+            xrows = [x for x in (r4.json() or []) if x.get("energy") == "0.1-0.8nm"]
+            xlast = xrows[-1] if xrows else {}
+            flux = xlast.get("flux")
+            try:
+                flux_f = float(flux) if flux is not None else None
+            except (TypeError, ValueError):
+                flux_f = None
+            out["xray"] = {
+                "flux": flux_f,
+                "class": _xray_class_from_flux(flux_f),
+                "time_tag": xlast.get("time_tag"),
+                "satellite": xlast.get("satellite"),
+            }
+        except Exception as e:
+            out["xray"] = {"class": None, "error": str(e)}
+
+        # Official R/S/G scales (0 = observed now)
+        try:
+            r5 = requests.get(
+                "https://services.swpc.noaa.gov/products/noaa-scales.json",
+                headers=headers,
+                timeout=6,
+            )
+            r5.raise_for_status()
+            scales = r5.json() or {}
+            now_s = scales.get("0") or {}
+            out["scales"] = {
+                "R": (now_s.get("R") or {}).get("Scale"),
+                "S": (now_s.get("S") or {}).get("Scale"),
+                "G": (now_s.get("G") or {}).get("Scale"),
+                "R_text": (now_s.get("R") or {}).get("Text"),
+                "S_text": (now_s.get("S") or {}).get("Text"),
+                "G_text": (now_s.get("G") or {}).get("Text"),
+                "time": f"{now_s.get('DateStamp', '')} {now_s.get('TimeStamp', '')}".strip(),
+            }
+        except Exception as e:
+            out["scales"] = {"error": str(e)}
+
+        # Almanac-flavored one-liner for operators / hams
+        kp = out.get("kp", {}).get("estimated")
+        bz = (out.get("imf") or {}).get("bz_gsm")
+        wind = (out.get("solar_wind") or {}).get("speed_kms")
+        xcls = (out.get("xray") or {}).get("class")
+        if kp is not None and kp >= 5:
+            counsel = (
+                f"Geomagnetic {g_label} ({g_plain}). HF may misbehave; VHF aurora possible up north. "
+                "The garden still needs water either way."
+            )
+        elif bz is not None and float(bz) <= -5:
+            counsel = (
+                f"IMF Bz is south ({float(bz):.1f} nT) — the magnetosphere is open for business. "
+                "Watch Kp; don't unplug the tomatoes yet."
+            )
+        elif wind is not None and float(wind) >= 600:
+            counsel = (
+                f"Solar wind running hot (~{float(wind):.0f} km/s). "
+                "Space is windy; Oklahoma is probably still just hot."
+            )
+        elif xcls and xcls[0] in ("M", "X"):
+            counsel = (
+                f"Solar X-ray class {xcls}. Radio blackouts possible on the sunlit side (R scale). "
+                "Ground weather remains a separate department."
+            )
+        else:
+            counsel = (
+                f"Kp≈{kp if kp is not None else '—'} ({g_plain}). "
+                f"X-ray {xcls or '—'} · wind {f'{wind:.0f} km/s' if wind else '—'}. "
+                "Bands are for listening; the hose is for watering."
+            )
+        out["counsel"] = counsel
+        out["ok"] = True
+    except Exception as e:
+        print(f"[spacewx] fetch failed: {e}")
+        out["ok"] = False
+        out["error"] = str(e)
+        out["counsel"] = (
+            "Space weather uplink is quiet or unreachable. "
+            "The creek does not care about the ionosphere either."
+        )
+
+    _space_wx_cache["data"] = out
+    _space_wx_cache["ts"] = now
+    return out
+
+
+CYBERSDR_URL = os.getenv("CYBERSDR_URL", "http://127.0.0.1:5020")
+SDR_TTL = int(os.getenv("SDR_ALMANAC_TTL", "120"))
+_sdr_cache = {"data": None, "ts": 0.0}
+
+
+def fetch_cybersdr_snapshot(force: bool = False) -> dict:
+    """Pull today's WSPR ledger from local CyberSDR for the Almanac guest column."""
+    now = time.time()
+    if not force and _sdr_cache["data"] and now - _sdr_cache["ts"] < SDR_TTL:
+        return _sdr_cache["data"]
+
+    base = CYBERSDR_URL.rstrip("/")
+    out: dict = {
+        "ok": False,
+        "source": "CyberSDR",
+        "source_url": "https://sdr.wy6y.net/",
+        "fetched_ts": int(now),
+    }
+    try:
+        stats = requests.get(f"{base}/api/stats", timeout=4).json()
+        status = requests.get(f"{base}/api/status", timeout=4).json()
+        try:
+            bands = requests.get(f"{base}/api/bands", timeout=4).json()
+        except Exception:
+            bands = []
+
+        out["stats"] = stats if isinstance(stats, dict) else {}
+        out["status"] = status if isinstance(status, dict) else {}
+        out["bands"] = bands if isinstance(bands, list) else []
+
+        total = out["stats"].get("total_spots")
+        unique = out["stats"].get("unique_calls")
+        dx = out["stats"].get("farthest_dx") or {}
+        snr = out["stats"].get("best_snr") or {}
+        dx_km = dx.get("distance_km")
+        dx_mi = round(float(dx_km) * 0.621371) if dx_km is not None else None
+        band_now = out["status"].get("current_band")
+        state = out["status"].get("state")
+
+        if dx_mi and dx.get("call"):
+            counsel = (
+                f"Best DX today: {dx.get('call')} at ~{dx_mi:,} mi "
+                f"({dx.get('grid') or '—'} · {dx.get('band') or '—'}). "
+                f"{unique or 0} unique stations · {total or 0} spots. "
+                "The ionosphere still works when the lawn does not."
+            )
+        elif total:
+            counsel = (
+                f"CyberSDR heard {total} WSPR spots from {unique or 0} stations today "
+                f"(listening {band_now or '—'}, {state or '—'}). "
+                "Distance is a rumor until the dongle agrees."
+            )
+        else:
+            counsel = (
+                "CyberSDR is up but today's ledger is empty so far. "
+                "Even the bands take coffee breaks."
+            )
+        if snr.get("call") is not None and snr.get("snr") is not None:
+            counsel += f" Loudest whisper: {snr.get('call')} at {snr.get('snr')} dB on {snr.get('band') or '—'}."
+
+        out["counsel"] = counsel
+        out["ok"] = True
+    except Exception as e:
+        print(f"[sdr] almanac snapshot failed: {e}")
+        out["ok"] = False
+        out["error"] = str(e)
+        out["counsel"] = (
+            "CyberSDR uplink quiet — check sdr.wy6y.net. "
+            "The creek does not care about WSPR either."
+        )
+        out["stats"] = {}
+        out["status"] = {}
+        out["bands"] = []
+
+    _sdr_cache["data"] = out
+    _sdr_cache["ts"] = now
+    return out
+
+
+def _almanac_payload() -> dict:
+    daily = weather_db.get_daily_history(800)
+    recs = weather_db.get_records()
+    db_stats = weather_db.stats()
+    with _local_lock:
+        live = dict(_local_state.get("merged") or {})
+    payload = almanac.build_payload(
+        daily_rows=daily,
+        records=recs,
+        db_stats=db_stats,
+        live=live,
+        gridsquare=GRIDSQUARE,
+        neighborhood=NEIGHBORHOOD,
+        station_id=STATION_ID,
+        display_name=DISPLAY_NAME,
+    )
+    # Space weather is a live guest column (NOAA SWPC) — not station archive
+    try:
+        payload["space_weather"] = fetch_space_weather()
+        # Prefer SWPC-aware ham line when available
+        sw = payload["space_weather"]
+        if sw.get("ok") and sw.get("counsel"):
+            words = payload.get("words") or {}
+            words["ham_aside"] = (
+                f"{sw['counsel']} Full sky work: sdr.wy6y.net · data: swpc.noaa.gov"
+            )
+            payload["words"] = words
+    except Exception as e:
+        print(f"[almanac] space weather attach failed: {e}")
+        payload["space_weather"] = {"ok": False, "error": str(e)}
+
+    # Local WSPR ledger from CyberSDR
+    try:
+        payload["sdr"] = fetch_cybersdr_snapshot()
+    except Exception as e:
+        print(f"[almanac] sdr attach failed: {e}")
+        payload["sdr"] = {"ok": False, "error": str(e), "stats": {}, "status": {}, "bands": []}
+    return payload
+
+
+# Local NEXRAD site for Edmond / Brasswood (Oklahoma City TLX)
+NWS_RADAR_SITE = os.getenv("NWS_RADAR_SITE", "KTLX")
+# Static ridge product (has basemap + range rings). RainViewer lat/lon tiles are
+# radar-only transparent overlays — look "broken" when dry, and the NWS SPA
+# often shows CODE 10001 when deep-linked with bad settings JSON.
+NWS_RIDGE_STATIC = f"https://radar.weather.gov/ridge/standard/{NWS_RADAR_SITE}_0.gif"
+NWS_RIDGE_LOOP = f"https://radar.weather.gov/ridge/standard/{NWS_RADAR_SITE}_loop.gif"
+NWS_RADAR_PAGE = f"https://radar.weather.gov/station/{NWS_RADAR_SITE}/standard"
+
+_radar_image_cache = {"bytes": None, "content_type": "image/gif", "ts": 0, "source_url": None}
+
+
+def fetch_radar(force: bool = False) -> dict:
+    """Local NWS ridge radar (KTLX) for the mini tile + link to full station page."""
+    now = time.time()
+    if not force and _radar_cache["data"] and now - _radar_cache["ts"] < RADAR_TTL:
+        return _radar_cache["data"]
+
+    # Serve via our proxy so the browser never hits weather.gov hotlink/CORS quirks
+    # and we can cache-bust with a short TTL query param.
+    bust = int(now // max(RADAR_TTL, 60))
+    tile_url = f"/api/radar/image?v={bust}"
+    payload = {
+        "tile_url": tile_url,
+        "loop_url": f"/api/radar/image?loop=1&v={bust}",
+        "upstream_static": NWS_RIDGE_STATIC,
+        "upstream_loop": NWS_RIDGE_LOOP,
+        "frame_ts": int(now),
+        "frame_age_sec": 0,
+        "lat": STATION_LAT,
+        "lon": STATION_LON,
+        "source": "nws-ridge",
+        "site": NWS_RADAR_SITE,
+        "nws_link": NWS_RADAR_PAGE,
+        "station_label": f"{NEIGHBORHOOD} · {NWS_RADAR_SITE}",
+    }
+    # Warm the image cache (non-fatal if NWS is slow)
+    try:
+        _fetch_radar_image_bytes(loop=False, force=force)
+        payload["ok"] = True
+    except Exception as e:
+        print(f"[radar] NWS ridge warm failed (non-fatal): {e}")
+        payload["ok"] = False
+        payload["error"] = str(e)
+    _radar_cache["data"] = payload
+    _radar_cache["ts"] = now
+    return payload
+
+
+def _fetch_radar_image_bytes(*, loop: bool = False, force: bool = False) -> tuple[bytes, str]:
+    """Download + short-cache the NWS ridge GIF (static or short loop)."""
+    now = time.time()
+    url = NWS_RIDGE_LOOP if loop else NWS_RIDGE_STATIC
+    # Separate cache keys by product
+    cache_key = "loop" if loop else "static"
+    cached = _radar_image_cache.get(cache_key) or {}
+    if (
+        not force
+        and cached.get("bytes")
+        and now - cached.get("ts", 0) < RADAR_TTL
+        and cached.get("source_url") == url
+    ):
+        return cached["bytes"], cached.get("content_type") or "image/gif"
+
+    r = requests.get(
+        url,
+        timeout=12,
+        headers={
+            "User-Agent": NWS_USER_AGENT,
+            "Accept": "image/gif,image/*,*/*",
+        },
+    )
+    r.raise_for_status()
+    content_type = r.headers.get("Content-Type") or "image/gif"
+    if len(r.content) < 500:
+        raise RuntimeError(f"Radar image too small from {url} ({len(r.content)} bytes)")
+    entry = {
+        "bytes": r.content,
+        "content_type": content_type,
+        "ts": now,
+        "source_url": url,
+    }
+    _radar_image_cache[cache_key] = entry
+    # keep legacy single-slot in sync for static
+    if not loop:
+        _radar_image_cache["bytes"] = r.content
+        _radar_image_cache["content_type"] = content_type
+        _radar_image_cache["ts"] = now
+        _radar_image_cache["source_url"] = url
+    return r.content, content_type
+
+
 def _apply_rssi_threshold(reason: str = "", delay: float = 0):
     """Push configured RSSI delta to WeatherThief RF config topic.
 
@@ -629,11 +1239,14 @@ def _pushover_notify(title: str, message: str):
 
 def _restart_weatherthief_fw(reason: str):
     """Full ESP32 firmware restart via MQTT SYS command — last resort after RF reinits fail."""
+    global _last_fw_restart_ts, _watchdog_stage
     if _mqtt_client is None:
         return
     topic = f"{MQTT_TOPIC_PREFIX.strip('/')}/{GATEWAY_NAME}/commands/MQTTtoSYS"
     try:
         _mqtt_client.publish(topic, json.dumps({"cmd": "restart"}), qos=1)
+        _last_fw_restart_ts = time.time()
+        _watchdog_stage = "restart"
         print(f"[mqtt] WeatherThief firmware restart sent ({reason}) -> {topic}")
         _pushover_notify("WeatherThief restarted", f"Watchdog sent firmware restart: {reason}")
     except Exception as e:
@@ -645,6 +1258,7 @@ def _mqtt_watchdog_loop():
     # Each {"active":3} causes a CC1101 SPI reinit (~2s window of no reception).
     # Cascading reinits can cause the receiver to miss every transmission.
     # After 4 failed RF reinits (~5 min of staleness), escalate to a full firmware restart.
+    global _watchdog_attempt, _watchdog_stage
     _backoff_intervals = [45, 45, 45, 120, 120, 300, 300, 600]
     _FW_RESTART_AT_ATTEMPT = 4  # RF reinits 1-3 first; restart on attempt 4
     # If data is already deeply stale at startup (e.g. service restart while device was stuck),
@@ -652,6 +1266,7 @@ def _mqtt_watchdog_loop():
     time.sleep(10)  # brief settle so MQTT subscriptions are established first
     age0 = _rtl_data_age_sec()
     _attempt = _FW_RESTART_AT_ATTEMPT if (age0 and age0 > 300) else 0
+    _watchdog_attempt = _attempt
     if _attempt:
         print(f"[mqtt] watchdog: starting at attempt {_attempt+1} (data already stale {age0}s at launch)")
     while True:
@@ -661,18 +1276,24 @@ def _mqtt_watchdog_loop():
             if os.path.exists("/tmp/watchdog-pause"):
                 print("[mqtt] watchdog paused (/tmp/watchdog-pause exists)")
                 _attempt = 0
+                _watchdog_attempt = 0
+                _watchdog_stage = "paused"
                 continue
             age = _rtl_data_age_sec()
             if age is None or age <= 120:
                 _attempt = 0  # data is fresh, reset backoff
+                _watchdog_attempt = 0
+                _watchdog_stage = "idle"
                 continue
             mqtt_rx_age = int(time.time() - _last_mqtt_rx_ts) if _last_mqtt_rx_ts else None
             print(f"[mqtt] watchdog: rtl data stale {age}s, mqtt_rx_age={mqtt_rx_age}, attempt={_attempt+1}")
             if _attempt >= _FW_RESTART_AT_ATTEMPT:
                 # RF reinits haven't recovered it — send a full firmware restart and
                 # wait a full interval before checking again so the ESP has time to reboot.
+                _watchdog_stage = "restart"
                 _restart_weatherthief_fw(f"watchdog-stale-{age}s-attempt{_attempt+1}")
             else:
+                _watchdog_stage = "reinit"
                 _enable_weatherthief_rf(f"watchdog-stale-{age}s")
             # Only reconnect MQTT if MQTT itself is silent — not just because RTL data is stale.
             # Reconnecting when MQTT is fine causes a cascade of lwt+app-connect RF enables
@@ -680,6 +1301,7 @@ def _mqtt_watchdog_loop():
             if mqtt_rx_age is not None and mqtt_rx_age > 120:
                 _reconnect_mqtt(f"stale-mqtt-{mqtt_rx_age}s")
             _attempt += 1
+            _watchdog_attempt = _attempt
         except Exception as e:
             print(f"[mqtt] watchdog error: {e}")
 
@@ -827,6 +1449,11 @@ def _ingest_rtl433(payload: dict, topic: str):
         merged["sensor_id"] = payload["id"]
     if payload.get("channel") is not None:
         merged["channel"] = payload["channel"]
+    if payload.get("rssi") is not None:
+        try:
+            merged["rssi"] = float(payload["rssi"])
+        except (TypeError, ValueError):
+            pass
 
     point = {
         "ts": now,
@@ -866,6 +1493,18 @@ def _ingest_rtl433(payload: dict, topic: str):
         _local_state["history"] = _normalize_history(
             [p for p in _local_state["history"] if p.get("ts", 0) >= cutoff]
         )[-500:]
+
+    global _last_rssi
+    if "rssi" in (point.get("readings") or {}):
+        _last_rssi = point["readings"]["rssi"]
+
+    try:
+        weather_db.insert_sample(point)
+    except Exception as e:
+        print(f"[weather_db] insert failed: {e}")
+
+    # Rare Almanac milestones (first 100°F, first freeze, 30-day drought) — once each
+    _maybe_almanac_milestones()
 
     _save_history()
     _publish_to_hud()
@@ -1051,6 +1690,12 @@ def _dashboard_payload():
         else:
             raise RuntimeError("WeatherThief offline — no rtl_433 data yet")
 
+    try:
+        radar = fetch_radar()
+    except Exception as e:
+        print(f"[radar] dashboard attach failed: {e}")
+        radar = None
+
     return {
         "source": source,
         "current": current,
@@ -1058,13 +1703,19 @@ def _dashboard_payload():
         "summary": summary,
         "alerts": alerts,
         "local": local,
+        "health": _health_payload(),
+        "daily": _daily_payload(),
+        "radar": radar,
     }
 
 
 def _on_mqtt_connect(client, userdata, flags, rc, properties=None):
+    global _mqtt_connected
     if rc != 0:
         print(f"[mqtt] connect failed rc={rc}")
+        _mqtt_connected = False
         return
+    _mqtt_connected = True
     prefix = MQTT_TOPIC_PREFIX.strip("/")
     client.subscribe(f"{prefix}/#")
     print(f"[mqtt] subscribed {prefix}/#")
@@ -1073,6 +1724,8 @@ def _on_mqtt_connect(client, userdata, flags, rc, properties=None):
 
 
 def _on_mqtt_disconnect(client, userdata, *args):
+    global _mqtt_connected
+    _mqtt_connected = False
     reason_code = args[-1] if args else 0
     rc = getattr(reason_code, "value", reason_code)
     print(f"[mqtt] disconnected rc={rc}")
@@ -1204,18 +1857,43 @@ def _publish_to_hud():
 
 # ============== API ROUTES ==============
 
-@app.route("/")
-def index():
+def _render_template(name: str) -> str:
     prefix = request.headers.get("X-Forwarded-Prefix", "").rstrip("/")
-    template_path = os.path.join(app.template_folder, "index.html")
+    template_path = os.path.join(app.template_folder, name)
     with open(template_path, "r", encoding="utf-8") as f:
         html = f.read()
-
     html = html.replace("{{ display_name }}", DISPLAY_NAME)
     html = html.replace("{{ neighborhood | upper }}", NEIGHBORHOOD.upper())
+    html = html.replace("{{ neighborhood }}", NEIGHBORHOOD)
     html = html.replace("{{ url_prefix }}", prefix)
-
+    html = html.replace("{{ gridsquare }}", GRIDSQUARE)
+    html = html.replace("{{ station_id }}", STATION_ID)
     return html
+
+
+def _html_response(html: str):
+    """HTML must not be cache-first'd by browsers/PWAs after deploys."""
+    resp = make_response(html)
+    resp.headers["Content-Type"] = "text/html; charset=utf-8"
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    resp.headers["Pragma"] = "no-cache"
+    resp.headers["Expires"] = "0"
+    return resp
+
+
+@app.route("/")
+def index():
+    return _html_response(_render_template("index.html"))
+
+
+@app.route("/records")
+def records_page():
+    return _html_response(_render_template("records.html"))
+
+
+@app.route("/almanac")
+def almanac_page():
+    return _html_response(_render_template("almanac.html"))
 
 
 @app.route("/api/dashboard")
@@ -1270,6 +1948,54 @@ def api_local():
     return jsonify({"success": True, "data": _local_payload()})
 
 
+@app.route("/api/health")
+def api_health():
+    return jsonify({"success": True, "data": _health_payload()})
+
+
+@app.route("/api/daily")
+def api_daily():
+    day = request.args.get("day")
+    return jsonify({"success": True, "data": _daily_payload(day)})
+
+
+@app.route("/api/records")
+def api_records():
+    return jsonify({"success": True, "data": _records_payload()})
+
+
+@app.route("/api/almanac")
+def api_almanac():
+    try:
+        return jsonify({"success": True, "data": _almanac_payload()})
+    except Exception as e:
+        print(f"[almanac] payload failed: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/radar")
+def api_radar():
+    force = request.args.get("force") in ("1", "true", "yes")
+    return jsonify({"success": True, "data": fetch_radar(force=force)})
+
+
+@app.route("/api/radar/image")
+def api_radar_image():
+    """Proxy NWS KTLX ridge GIF so the dashboard always gets a real basemap image."""
+    loop = request.args.get("loop") in ("1", "true", "yes")
+    force = request.args.get("force") in ("1", "true", "yes")
+    try:
+        data, content_type = _fetch_radar_image_bytes(loop=loop, force=force)
+        resp = make_response(data)
+        resp.headers["Content-Type"] = content_type
+        resp.headers["Cache-Control"] = f"public, max-age={max(60, RADAR_TTL // 2)}"
+        resp.headers["X-Radar-Source"] = NWS_RIDGE_LOOP if loop else NWS_RIDGE_STATIC
+        return resp
+    except Exception as e:
+        print(f"[radar] image proxy failed: {e}")
+        return jsonify({"success": False, "error": str(e)}), 502
+
+
 @app.route("/manifest.json")
 def manifest():
     prefix = request.headers.get("X-Forwarded-Prefix", "").rstrip("/")
@@ -1297,16 +2023,43 @@ def manifest():
 
 @app.route("/sw.js")
 def service_worker():
-    return send_from_directory(
+    resp = send_from_directory(
         os.path.join(app.root_path, "static"),
         "sw.js",
         mimetype="application/javascript",
         max_age=0,
     )
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    resp.headers["Service-Worker-Allowed"] = "/"
+    return resp
+
+
+def _bootstrap_storage():
+    """Init SQLite, migrate JSON history, load in-memory buffer."""
+    weather_db.init(WX_DB_PATH)
+    _load_history()
+    try:
+        with _local_lock:
+            hist = list(_local_state.get("history") or [])
+        if hist and weather_db.sample_count() == 0:
+            weather_db.migrate_from_json_history(hist)
+        elif hist:
+            # Import any JSON points not yet in DB (idempotent on ts)
+            weather_db.migrate_from_json_history(hist)
+        db_stats = weather_db.stats()
+        print(
+            f"[weather_db] {db_stats.get('samples', 0)} samples · "
+            f"{db_stats.get('daily_days', 0)} days · "
+            f"retention={db_stats.get('retention_days')}d · {WX_DB_PATH}"
+        )
+        # Stamp historical Almanac milestones (no spam) so rare Pushovers only fire when fresh
+        _maybe_almanac_milestones(force=True)
+    except Exception as e:
+        print(f"[weather_db] bootstrap failed: {e}")
 
 
 if __name__ == "__main__":
-    _load_history()
+    _bootstrap_storage()
     _publish_to_hud()
     _start_mqtt()
 
@@ -1330,5 +2083,6 @@ if __name__ == "__main__":
     print("Source  : WeatherThief MQTT (rtl_433 only, no WU)")
     print(f"Cache   : alerts={ALERTS_TTL}s  (local data live via MQTT)")
     print(f"MQTT    : {MQTT_HOST}:{MQTT_PORT}  topic={MQTT_TOPIC_PREFIX}/#  gateway={GATEWAY_NAME}")
+    print(f"Archive : SQLite {WX_DB_PATH}")
     print("Ctrl-C to stop.\n")
     app.run(host=host, port=port, debug=False, threaded=True)

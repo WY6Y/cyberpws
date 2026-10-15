@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#00f0ff">
+  <meta name="color-scheme" content="dark">
+  <meta name="description" content="The CyberPunk Farmers Almanac — Chisholm Creek Edition. Wit, wisdom, and provisional climate from WY6Y Weather.">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" href="/static/favicon.ico" sizes="any">
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+  <title>WY6Y Weather • Almanac</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=VT323&family=Special+Elite&display=swap');
+    :root {
+      --neon-cyan: #00f0ff;
+      --neon-green: #00ff9f;
+      --neon-magenta: #ff00aa;
+      --neon-yellow: #ffe566;
+      --paper: #0c0c10;
+      /* Brighter body ink — easier on aging eyes than mid-grey */
+      --ink: #e6e2d6;
+      --ink-dim: #c4bfb0;
+      --ink-mute: #a8a294;
+    }
+    body {
+      font-family: "Share Tech Mono", ui-monospace, monospace;
+      background: #050505;
+      color: var(--ink);
+      font-size: 17px;
+      line-height: 1.45;
+      min-height: 100dvh;
+    }
+    .cyber-grid {
+      background-image:
+        linear-gradient(rgba(0, 240, 255, 0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 240, 255, 0.05) 1px, transparent 1px);
+      background-size: 28px 28px;
+    }
+    .neon-cyan { color: var(--neon-cyan); text-shadow: 0 0 8px var(--neon-cyan); }
+    .neon-green { color: var(--neon-green); text-shadow: 0 0 8px var(--neon-green); }
+    .neon-magenta { color: var(--neon-magenta); text-shadow: 0 0 8px var(--neon-magenta); }
+    .neon-yellow { color: var(--neon-yellow); text-shadow: 0 0 8px rgba(255, 229, 102, 0.45); }
+    .hud-border {
+      border: 1px solid rgba(0, 240, 255, 0.28);
+      box-shadow:
+        0 0 0 1px rgba(0, 240, 255, 0.08),
+        0 0 14px rgba(0, 240, 255, 0.12),
+        inset 0 0 14px rgba(0, 240, 255, 0.04);
+    }
+    /* Headers stay compact; body text does the heavy lifting */
+    .section-title {
+      font-size: 0.78rem;
+      letter-spacing: 2.5px;
+      text-transform: uppercase;
+      color: var(--ink-dim);
+      opacity: 0.95;
+      border-bottom: 1px solid rgba(0, 240, 255, 0.25);
+      padding-bottom: 4px;
+      margin-bottom: 12px;
+    }
+    .masthead {
+      font-family: "Special Elite", "VT323", serif;
+      letter-spacing: 2px;
+    }
+    .metric-value {
+      font-size: 2.15rem;
+      line-height: 1.05;
+      font-weight: 700;
+      font-family: "VT323", monospace;
+    }
+    .hud-label {
+      font-size: 0.78rem;
+      letter-spacing: 1.5px;
+      color: var(--ink-mute);
+      opacity: 1;
+      text-transform: uppercase;
+    }
+    .body-text { font-size: 1.05rem; line-height: 1.5; color: var(--ink); }
+    .meta-text { font-size: 0.95rem; line-height: 1.45; color: var(--ink-dim); }
+    .small-text { font-size: 0.88rem; line-height: 1.4; color: var(--ink-mute); }
+    .tier-fact { border-left: 3px solid var(--neon-cyan); }
+    .tier-counsel { border-left: 3px solid var(--neon-green); }
+    .tier-oracle { border-left: 3px solid var(--neon-magenta); }
+    .barcode {
+      font-family: "Share Tech Mono", monospace;
+      letter-spacing: 6px;
+      border: 2px solid rgba(200, 196, 184, 0.45);
+      padding: 6px 12px;
+      background:
+        repeating-linear-gradient(90deg,
+          #111 0 2px, transparent 2px 4px,
+          #111 4px 5px, transparent 5px 8px);
+      background-color: #0a0a0a;
+    }
+    .heat-cell {
+      aspect-ratio: 1;
+      min-width: 0;
+      border: 1px solid rgba(255,255,255,0.08);
+      font-size: 0.72rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      line-height: 1.15;
+    }
+    .heat-cell.empty { opacity: 0.35; background: #0a0a0a; }
+    .progress-track {
+      height: 10px;
+      background: rgba(255,255,255,0.1);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--neon-cyan), var(--neon-magenta));
+      box-shadow: 0 0 8px var(--neon-cyan);
+    }
+    .check-done { color: var(--neon-green); font-size: 1.15rem; }
+    .check-open { color: rgba(200,196,184,0.45); font-size: 1.15rem; }
+    .provisional-badge {
+      border: 1px dashed rgba(255, 229, 102, 0.55);
+      color: var(--neon-yellow);
+      letter-spacing: 1px;
+      font-size: 0.88rem;
+    }
+    /* Almanac woodcut flair — Farmers Almanac throwback, not a second UI */
+    .masthead-art {
+      width: 112px;
+      height: 112px;
+      object-fit: contain;
+      border-radius: 50%;
+      border: 1px solid rgba(0, 240, 255, 0.28);
+      box-shadow: 0 0 18px rgba(0, 240, 255, 0.18);
+      background: #08080c;
+      flex-shrink: 0;
+    }
+    @media (min-width: 640px) {
+      .masthead-art { width: 132px; height: 132px; }
+    }
+    .section-head {
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+      border-bottom: 1px solid rgba(0, 240, 255, 0.25);
+      padding-bottom: 6px;
+      margin-bottom: 12px;
+    }
+    .section-head .section-title {
+      border-bottom: none;
+      padding-bottom: 0;
+      margin-bottom: 0;
+      flex: 1;
+    }
+    .section-icon {
+      width: 36px;
+      height: 36px;
+      object-fit: contain;
+      border-radius: 50%;
+      border: 1px solid rgba(200, 196, 184, 0.22);
+      background: #08080c;
+      flex-shrink: 0;
+      opacity: 0.95;
+    }
+    .section-icon-sm {
+      width: 28px;
+      height: 28px;
+    }
+    @media print {
+      body { background: white; color: black; font-size: 12pt; }
+      .no-print { display: none !important; }
+      .hud-border { border-color: #333; box-shadow: none; }
+      .masthead-art, .section-icon { box-shadow: none; }
+    }
+  </style>
+</head>
+<body class="bg-[#050505] cyber-grid">
+  <div class="max-w-[1100px] mx-auto px-4 sm:px-6 py-5">
+
+    <!-- MASTHEAD -->
+    <header class="hud-border bg-[#0a0a0f] p-5 rounded-sm mb-4 relative overflow-hidden">
+      <div class="flex flex-wrap items-start justify-between gap-4">
+        <div class="flex items-start gap-4 min-w-0 flex-1">
+          <picture class="shrink-0">
+            <source srcset="/static/almanac/masthead-sundial.webp" type="image/webp">
+            <img src="/static/almanac/masthead-sundial.png" alt="Sun-faced sundial emblem — cyberpunk Farmers Almanac homage"
+                 class="masthead-art" width="132" height="132" decoding="async">
+          </picture>
+          <div class="min-w-0">
+            <div class="flex items-center gap-x-3 flex-wrap gap-y-2">
+              <a href="/" class="text-2xl sm:text-3xl font-bold tracking-[5px] neon-cyan hover:underline">WY6Y WEATHER</a>
+              <div class="text-xs px-3 py-1 border border-[#ff00aa]/50 text-[#ff00aa] tracking-[2px]">ALMANAC</div>
+              <div id="vol-chip" class="text-xs px-3 py-1 border border-[#ffff00]/40 text-[#ffff00] tracking-[2px]">VOL. —</div>
+            </div>
+            <h1 id="masthead-title" class="masthead text-2xl sm:text-3xl mt-3 text-[#f0ebe0]">THE CYBERPUNK FARMERS ALMANAC</h1>
+            <p id="masthead-sub" class="meta-text mt-2 tracking-wide">Chisholm Creek Edition · Plant by data, pray by neon</p>
+            <p class="meta-text text-[#7dffc0] mt-2">
+              {{ display_name }} · {{ neighborhood | upper }} · {{ gridsquare }} · STATION {{ station_id }}
+            </p>
+          </div>
+        </div>
+        <div class="text-right no-print shrink-0">
+          <div class="flex flex-wrap justify-end gap-2 text-[0.88rem]">
+            <a href="/" class="border border-[#00ff9f]/40 px-3 py-1.5 tracking-widest hover:bg-[#00ff9f]/10">DASHBOARD</a>
+            <a href="/records" class="border border-[#00f0ff]/40 px-3 py-1.5 tracking-widest hover:bg-[#00f0ff]/10">RECORDS</a>
+          </div>
+          <div id="page-label" class="mt-3 small-text font-mono">p. —</div>
+          <div id="barcode" class="barcode mt-2 text-[0.88rem] inline-block">EM15fo</div>
+        </div>
+      </div>
+
+      <div id="volume-joke" class="mt-4 body-text border-t border-white/10 pt-3 max-w-3xl">
+        Loading the incomplete truth…
+      </div>
+      <div id="baseline-badge" class="mt-3 inline-block provisional-badge px-2.5 py-1">BASELINE: …</div>
+    </header>
+
+    <!-- SEASON + MOON + EDITION -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+      <section class="hud-border bg-[#0a0a0f] p-5 rounded-sm">
+        <div class="section-head">
+          <img src="/static/almanac/icon-instrument.webp" alt="" class="section-icon" width="36" height="36" loading="lazy">
+          <div class="section-title">Season dial</div>
+        </div>
+        <div id="season-name" class="metric-value neon-yellow">—</div>
+        <div id="season-label" class="body-text mt-2">—</div>
+        <div class="progress-track mt-4">
+          <div id="season-bar" class="progress-fill" style="width:0%"></div>
+        </div>
+        <div id="season-pct" class="meta-text mt-2">—</div>
+        <div id="doy-line" class="meta-text mt-3">—</div>
+      </section>
+
+      <section class="hud-border bg-[#0a0a0f] p-5 rounded-sm">
+        <div class="section-head">
+          <img src="/static/almanac/icon-moon.webp" alt="" class="section-icon" width="36" height="36" loading="lazy">
+          <div class="section-title">Lunar strip · folklore</div>
+        </div>
+        <div class="flex items-baseline gap-3">
+          <span id="moon-icon" class="text-5xl neon-cyan">○</span>
+          <div>
+            <div id="moon-name" class="metric-value neon-cyan">—</div>
+            <div id="moon-illum" class="meta-text mt-1">—</div>
+          </div>
+        </div>
+        <p id="moon-lore" class="body-text mt-4">—</p>
+        <div id="moon-next" class="meta-text mt-2">—</div>
+        <div class="small-text mt-2 italic" id="moon-disc">—</div>
+      </section>
+
+      <section class="hud-border bg-[#0a0a0f] p-5 rounded-sm">
+        <div class="section-head">
+          <img src="/static/almanac/icon-book.webp" alt="" class="section-icon" width="36" height="36" loading="lazy">
+          <div class="section-title">Edition · print chrome</div>
+        </div>
+        <div id="print-edition" class="text-xl neon-magenta tracking-widest font-bold">—</div>
+        <div id="print-for" class="body-text mt-2">—</div>
+        <div id="print-copy" class="meta-text mt-3">—</div>
+        <div id="archive-span" class="meta-text mt-3 font-mono">—</div>
+      </section>
+    </div>
+
+    <!-- SPACE WEATHER (NOAA SWPC) -->
+    <section class="hud-border bg-[#0a0a0f] p-5 rounded-sm mb-4">
+      <div class="section-head">
+        <img src="/static/almanac/icon-space.webp" alt="" class="section-icon" width="36" height="36" loading="lazy">
+        <div class="section-title">Space weather · sky guest column</div>
+        <a href="https://www.swpc.noaa.gov/" target="_blank" rel="noopener"
+           class="small-text neon-cyan hover:underline tracking-widest no-print">NOAA SWPC ↗</a>
+      </div>
+      <p class="small-text mb-4">Not the roof. The ionosphere. Useful for HF curiosity; tomatoes remain unimpressed.</p>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+        <div class="border border-white/10 p-3 bg-black/25">
+          <div class="hud-label">Kp (est.)</div>
+          <div id="sw-kp" class="metric-value neon-cyan mt-1">—</div>
+          <div id="sw-kp-scale" class="meta-text mt-1">—</div>
+        </div>
+        <div class="border border-white/10 p-3 bg-black/25">
+          <div class="hud-label">Solar wind</div>
+          <div id="sw-wind" class="metric-value neon-yellow mt-1 text-[1.75rem]">—</div>
+          <div class="meta-text mt-1">km/s · protons</div>
+        </div>
+        <div class="border border-white/10 p-3 bg-black/25">
+          <div class="hud-label">IMF Bz (GSM)</div>
+          <div id="sw-bz" class="metric-value neon-green mt-1 text-[1.75rem]">—</div>
+          <div class="meta-text mt-1">nT · south = open door</div>
+        </div>
+        <div class="border border-white/10 p-3 bg-black/25">
+          <div class="hud-label">X-ray class</div>
+          <div id="sw-xray" class="metric-value neon-magenta mt-1">—</div>
+          <div id="sw-scales" class="meta-text mt-1">R/S/G —</div>
+        </div>
+      </div>
+      <p id="sw-counsel" class="body-text border-l-4 border-[#00f0ff] pl-3 py-1 bg-black/20">—</p>
+      <div id="sw-meta" class="small-text mt-3">—</div>
+    </section>
+
+    <!-- CYBERSDR / WSPR (local guest column) -->
+    <section class="hud-border bg-[#0a0a0f] p-5 rounded-sm mb-4">
+      <div class="section-head">
+        <img src="/static/almanac/icon-radio.webp" alt="" class="section-icon" width="36" height="36" loading="lazy">
+        <div class="section-title">Propagation ledger · CyberSDR WSPR</div>
+        <a href="https://sdr.wy6y.net/" target="_blank" rel="noopener"
+           class="small-text neon-green hover:underline tracking-widest no-print">sdr.wy6y.net ↗</a>
+      </div>
+      <p class="small-text mb-4">Stations the sky delivered to our dongle today — not the garden, but related by atmosphere and stubbornness.</p>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+        <div class="border border-white/10 p-3 bg-black/25">
+          <div class="hud-label">Spots today</div>
+          <div id="sdr-spots" class="metric-value neon-cyan mt-1">—</div>
+          <div class="meta-text mt-1">WSPR decodes</div>
+        </div>
+        <div class="border border-white/10 p-3 bg-black/25">
+          <div class="hud-label">Unique calls</div>
+          <div id="sdr-calls" class="metric-value neon-green mt-1">—</div>
+          <div class="meta-text mt-1">stations heard</div>
+        </div>
+        <div class="border border-white/10 p-3 bg-black/25">
+          <div class="hud-label">Best DX</div>
+          <div id="sdr-dx" class="metric-value neon-magenta mt-1 text-[1.65rem]">—</div>
+          <div id="sdr-dx-meta" class="meta-text mt-1">—</div>
+        </div>
+        <div class="border border-white/10 p-3 bg-black/25">
+          <div class="hud-label">Best SNR</div>
+          <div id="sdr-snr" class="metric-value neon-yellow mt-1 text-[1.65rem]">—</div>
+          <div id="sdr-snr-meta" class="meta-text mt-1">—</div>
+        </div>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+        <div class="border border-white/10 p-3 bg-black/20">
+          <div class="hud-label">Decoder now</div>
+          <div id="sdr-band" class="body-text mt-1 neon-cyan">—</div>
+          <div id="sdr-state" class="meta-text mt-1">—</div>
+        </div>
+        <div class="border border-white/10 p-3 bg-black/20">
+          <div class="hud-label">Bands today</div>
+          <div id="sdr-bands" class="meta-text mt-1 font-mono leading-relaxed">—</div>
+        </div>
+      </div>
+      <p id="sdr-counsel" class="body-text border-l-4 border-[#00ff9f] pl-3 py-1 bg-black/20">—</p>
+      <div id="sdr-meta" class="small-text mt-3">—</div>
+    </section>
+
+    <!-- THREE TIERS -->
+    <section class="hud-border bg-[#0a0a0f] p-5 rounded-sm mb-4">
+      <div class="section-head">
+        <img src="/static/almanac/icon-book.webp" alt="" class="section-icon" width="36" height="36" loading="lazy">
+        <div class="section-title">Proverbs of the uplink</div>
+      </div>
+      <p id="tiers-note" class="small-text mb-3">FACT · COUNSEL · ORACLE</p>
+      <div class="space-y-4">
+        <div class="tier-fact pl-4 py-2 bg-black/20">
+          <div class="hud-label text-[#00f0ff]">Fact</div>
+          <p id="tier-fact" class="body-text mt-1">—</p>
+        </div>
+        <div class="tier-counsel pl-4 py-2 bg-black/20">
+          <div class="hud-label text-[#00ff9f]">Counsel</div>
+          <p id="tier-counsel" class="body-text mt-1">—</p>
+        </div>
+        <div class="tier-oracle pl-4 py-2 bg-black/20">
+          <div class="hud-label text-[#ff00aa]">Oracle // folklore</div>
+          <p id="tier-oracle" class="body-text mt-1 italic">—</p>
+        </div>
+        <div class="pl-4 py-2 border-l-[3px] border-white/25">
+          <div class="hud-label">Proverb of the day</div>
+          <p id="tier-proverb" class="body-text mt-1">—</p>
+        </div>
+      </div>
+      <div class="mt-5 pt-4 border-t border-white/10">
+        <div class="hud-label">Ham aside · guest column</div>
+        <p id="ham-aside" class="body-text mt-1">—</p>
+      </div>
+    </section>
+
+    <!-- THIS DAY + RAIN -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+      <section class="hud-border bg-[#0a0a0f] p-5 rounded-sm">
+        <div class="section-head">
+          <img src="/static/almanac/icon-instrument.webp" alt="" class="section-icon" width="36" height="36" loading="lazy">
+          <div class="section-title">This day in station history</div>
+        </div>
+        <div id="this-day-note" class="meta-text mb-3">—</div>
+        <div id="today-stats" class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4"></div>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="border border-white/10 p-3 bg-black/20">
+            <div class="hud-label">Last 7 days</div>
+            <div id="win-7" class="mt-1 font-mono meta-text">—</div>
+          </div>
+          <div class="border border-white/10 p-3 bg-black/20">
+            <div class="hud-label">Last 30 days</div>
+            <div id="win-30" class="mt-1 font-mono meta-text">—</div>
+          </div>
+        </div>
+        <div class="mt-3 border border-dashed border-[#ffe566]/35 p-3">
+          <div class="hud-label text-[#ffe566]">NWS-area month normal (reference)</div>
+          <div id="nws-month" class="meta-text mt-1 font-mono">—</div>
+        </div>
+        <div id="on-this-date" class="mt-3 meta-text font-mono"></div>
+      </section>
+
+      <section class="hud-border bg-[#0a0a0f] p-5 rounded-sm">
+        <div class="section-head">
+          <img src="/static/almanac/icon-rain.webp" alt="" class="section-icon" width="36" height="36" loading="lazy">
+          <div class="section-title">Rain year book</div>
+        </div>
+        <div class="flex flex-wrap items-end gap-4 mb-3">
+          <div>
+            <div class="hud-label">YTD roof rain</div>
+            <div id="ytd-rain" class="metric-value neon-cyan">—</div>
+          </div>
+          <div>
+            <div class="hud-label">NWS-area YTD normal</div>
+            <div id="ytd-nws" class="text-2xl font-mono text-[#ffe566]">—</div>
+          </div>
+          <div>
+            <div class="hud-label">Delta</div>
+            <div id="ytd-delta" class="text-2xl font-mono">—</div>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-3 mb-3">
+          <div class="border border-white/10 p-3">
+            <div class="hud-label">Dry streak</div>
+            <div id="dry-streak" class="metric-value neon-yellow">—</div>
+            <div id="drought-label" class="meta-text mt-1 tracking-widest">—</div>
+          </div>
+          <div class="border border-white/10 p-3">
+            <div class="hud-label">Wet days · streaks</div>
+            <div id="wet-meta" class="mt-1 font-mono meta-text">—</div>
+          </div>
+        </div>
+        <div id="rain-months" class="meta-text font-mono"></div>
+        <div id="wind-ledger" class="mt-3 meta-text border-t border-white/10 pt-3"></div>
+      </section>
+    </div>
+
+    <!-- PHENOLOGY + HEATMAP -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+      <section class="hud-border bg-[#0a0a0f] p-5 rounded-sm">
+        <div class="section-head">
+          <img src="/static/almanac/icon-book.webp" alt="" class="section-icon" width="36" height="36" loading="lazy">
+          <div class="section-title">Phenology board</div>
+        </div>
+        <p class="meta-text mb-3">Life markers auto-flagged from daily rollups. Manual farm diary later, if the garden demands it.</p>
+        <ul id="pheno-list" class="space-y-3 body-text"></ul>
+      </section>
+
+      <section class="hud-border bg-[#0a0a0f] p-5 rounded-sm">
+        <div class="section-head">
+          <img src="/static/almanac/icon-instrument.webp" alt="" class="section-icon" width="36" height="36" loading="lazy">
+          <div class="section-title">Month at a glance</div>
+          <div id="heat-title" class="meta-text">—</div>
+        </div>
+        <p class="meta-text mb-2">Daily high (°F) · empty cells = unborn or pre-archive days</p>
+        <div id="heatmap" class="grid grid-cols-7 gap-0.5"></div>
+        <div class="flex justify-between small-text mt-2">
+          <span>cooler</span>
+          <span id="heat-scale">—</span>
+          <span>hotter</span>
+        </div>
+        <div id="heat-nws" class="meta-text mt-2 font-mono">—</div>
+      </section>
+    </div>
+
+    <!-- RECORDS TEASER -->
+    <section class="hud-border bg-[#0a0a0f] p-5 rounded-sm mb-4">
+      <div class="section-head">
+        <img src="/static/almanac/icon-instrument.webp" alt="" class="section-icon" width="36" height="36" loading="lazy">
+        <div class="section-title">Legendary extremes</div>
+        <a href="/records" class="meta-text neon-cyan hover:underline tracking-widest no-print">FULL LEDGER →</a>
+      </div>
+      <div id="records-teaser" class="grid grid-cols-2 md:grid-cols-4 gap-3"></div>
+    </section>
+
+    <!-- FINE PRINT -->
+    <footer class="hud-border bg-[#0a0a0f] p-5 rounded-sm mb-6">
+      <div class="section-head">
+        <img src="/static/almanac/icon-book.webp" alt="" class="section-icon section-icon-sm" width="28" height="28" loading="lazy">
+        <div class="section-title">Fine print · WY6Y Weather Trust</div>
+      </div>
+      <p id="fine-print" class="meta-text max-w-3xl">—</p>
+      <p id="creek-footer" class="mt-4 body-text neon-magenta italic">The creek does not care.</p>
+      <div class="mt-4 flex flex-wrap justify-between gap-2 small-text no-print">
+        <span>SQLite daily forever · samples ~90d · almanac grows into itself</span>
+        <span class="flex gap-4">
+          <a href="/" class="hover:text-white">DASHBOARD</a>
+          <a href="/records" class="hover:text-white">RECORDS</a>
+          <button onclick="window.print()" class="hover:text-white">PRINT EDITION</button>
+        </span>
+      </div>
+    </footer>
+  </div>
+
+  <script>
+    let units = 'imperial';
+    try { units = localStorage.getItem('wx_units') || 'imperial'; } catch (_) {}
+
+    function convert(val, type) {
+      if (val == null || Number.isNaN(Number(val))) return null;
+      const v = Number(val);
+      if (units !== 'metric') return v;
+      if (type === 'temp') return (v - 32) * 5 / 9;
+      if (type === 'wind' || type === 'gust') return v * 1.60934;
+      if (type === 'precip') return v * 25.4;
+      return v;
+    }
+    function unit(type) {
+      if (units !== 'metric') {
+        if (type === 'temp') return '°F';
+        if (type === 'wind' || type === 'gust') return 'mph';
+        if (type === 'precip') return '"';
+        return '';
+      }
+      if (type === 'temp') return '°C';
+      if (type === 'wind' || type === 'gust') return 'kph';
+      if (type === 'precip') return 'mm';
+      return '';
+    }
+    function fmtTemp(v) {
+      if (v == null) return '—';
+      const x = convert(v, 'temp');
+      return `${Math.round(x)}${unit('temp')}`;
+    }
+    function fmtRain(v) {
+      if (v == null) return '—';
+      const x = convert(v, 'precip');
+      const d = units === 'metric' ? 1 : 2;
+      return `${Number(x).toFixed(d)}${unit('precip')}`;
+    }
+    function fmtGust(v) {
+      if (v == null) return '—';
+      const x = convert(v, 'gust');
+      return `${Math.round(x)} ${unit('gust')}`;
+    }
+    function heatColor(t, tmin, tmax) {
+      if (t == null || tmin == null || tmax == null) return 'rgba(20,20,24,0.9)';
+      const span = Math.max(tmax - tmin, 1);
+      const u = (t - tmin) / span;
+      // cyan (cool) → yellow → magenta (hot)
+      const r = Math.round(0 + u * 255);
+      const g = Math.round(200 - u * 100);
+      const b = Math.round(255 - u * 200);
+      return `rgba(${r},${g},${b},0.55)`;
+    }
+    function esc(s) {
+      return String(s ?? '').replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      })[c]);
+    }
+
+    function render(data) {
+      const vol = data.volume || {};
+      const arch = data.archive || {};
+      const season = data.season || {};
+      const doy = data.doy || {};
+      const moon = data.moon || {};
+      const rain = data.rain || {};
+      const words = data.words || {};
+      const thisDay = data.this_day || {};
+      const pheno = data.phenology || {};
+      const heat = data.heatmap || {};
+      const windLedger = data.wind || {};
+      const pr = data.print || {};
+
+      document.getElementById('vol-chip').textContent = vol.label || 'VOL. I';
+      document.getElementById('masthead-title').textContent = vol.masthead || 'THE CYBERPUNK FARMERS ALMANAC';
+      document.getElementById('masthead-sub').textContent = vol.subtitle || '';
+      document.getElementById('volume-joke').textContent = vol.joke || '';
+      document.getElementById('baseline-badge').textContent = arch.baseline_label || '';
+      document.getElementById('page-label').textContent = pr.page_label || '';
+      document.getElementById('barcode').textContent = vol.barcode || data.station?.gridsquare || '';
+
+      document.getElementById('season-name').textContent = (season.name || '—').toUpperCase();
+      document.getElementById('season-label').textContent = season.label || '';
+      document.getElementById('season-bar').style.width = `${season.pct_complete || 0}%`;
+      document.getElementById('season-pct').textContent =
+        `${season.pct_complete ?? '—'}% of meteorological ${ (season.name || '').toLowerCase() } complete`;
+      document.getElementById('doy-line').textContent =
+        `${doy.label || ''} · ${doy.pct_year ?? '—'}% of the calendar year`;
+
+      document.getElementById('moon-icon').textContent = moon.icon || '○';
+      document.getElementById('moon-name').textContent = moon.name || '—';
+      document.getElementById('moon-illum').textContent =
+        `Illumination ${moon.illumination_pct ?? '—'}% · age ${moon.age_days ?? '—'} d`;
+      document.getElementById('moon-lore').textContent = moon.lore || '';
+      document.getElementById('moon-next').textContent =
+        `Next full ${moon.next_full || '—'} · next new ${moon.next_new || '—'}`;
+      document.getElementById('moon-disc').textContent = moon.disclaimer || '';
+
+      document.getElementById('print-edition').textContent = pr.edition || vol.label || '';
+      document.getElementById('print-for').textContent = pr.printed_for || '';
+      document.getElementById('print-copy').textContent = vol.copyright || '';
+      document.getElementById('archive-span').textContent =
+        arch.first_day
+          ? `Archive ${arch.first_day} → ${arch.last_day} · ${arch.daily_days} days · ${arch.samples ?? '—'} samples`
+          : 'Archive empty — waiting on the roof.';
+
+      document.getElementById('tiers-note').textContent = words.tiers_note || '';
+      document.getElementById('tier-fact').textContent = words.fact || '—';
+      document.getElementById('tier-counsel').textContent = words.counsel || '—';
+      document.getElementById('tier-oracle').textContent = words.oracle || '—';
+      document.getElementById('tier-proverb').textContent = words.proverb || words.static_proverb || '—';
+      document.getElementById('ham-aside').textContent = words.ham_aside || '—';
+      document.getElementById('creek-footer').textContent = words.creek_footer || 'The creek does not care.';
+      document.getElementById('fine-print').textContent = pr.fine_print || arch.note || '';
+
+      // Space weather (NOAA SWPC) — do not shadow windLedger above
+      const sw = data.space_weather || {};
+      const kp = sw.kp || {};
+      const solarWind = sw.solar_wind || {};
+      const imf = sw.imf || {};
+      const xray = sw.xray || {};
+      const scales = sw.scales || {};
+      document.getElementById('sw-kp').textContent =
+        kp.estimated != null ? Number(kp.estimated).toFixed(2) : '—';
+      document.getElementById('sw-kp-scale').textContent =
+        kp.scale ? `${kp.scale} · ${kp.scale_plain || ''}` : (sw.ok ? '—' : 'uplink quiet');
+      document.getElementById('sw-wind').textContent =
+        solarWind.speed_kms != null ? Math.round(solarWind.speed_kms) : '—';
+      const bz = imf.bz_gsm;
+      const bzEl = document.getElementById('sw-bz');
+      if (bz != null && !Number.isNaN(Number(bz))) {
+        const bzn = Number(bz);
+        bzEl.textContent = (bzn >= 0 ? '+' : '') + bzn.toFixed(1);
+        bzEl.className = 'metric-value mt-1 text-[1.75rem] ' + (bzn < -3 ? 'neon-magenta' : 'neon-green');
+      } else {
+        bzEl.textContent = '—';
+      }
+      document.getElementById('sw-xray').textContent = xray.class || '—';
+      document.getElementById('sw-scales').textContent =
+        `R${scales.R ?? '—'} / S${scales.S ?? '—'} / G${scales.G ?? '—'}`;
+      document.getElementById('sw-counsel').textContent = sw.counsel || 'Space weather loading…';
+      document.getElementById('sw-meta').textContent = sw.ok
+        ? `Source: ${sw.source || 'NOAA SWPC'} · Kp ${kp.time_tag || '—'} · scales ${scales.time || '—'}`
+        : `Space weather unavailable${sw.error ? ': ' + sw.error : ''}`;
+
+      // This day
+      document.getElementById('this-day-note').textContent = thisDay.on_this_date_note || '';
+      const td = thisDay.today;
+      const statsEl = document.getElementById('today-stats');
+      if (td) {
+        statsEl.innerHTML = [
+          ['High', fmtTemp(td.temp_max)],
+          ['Low', fmtTemp(td.temp_min)],
+          ['Rain', fmtRain(td.rain_daily_in)],
+          ['Peak gust', fmtGust(td.wind_gust_max)],
+          ['Hum min', td.humidity_min != null ? `${Math.round(td.humidity_min)}%` : '—'],
+          ['Hum max', td.humidity_max != null ? `${Math.round(td.humidity_max)}%` : '—'],
+        ].map(([l, v]) => `
+          <div class="border border-white/10 p-3 bg-black/20">
+            <div class="hud-label">${l}</div>
+            <div class="text-xl font-mono neon-cyan mt-1">${v}</div>
+          </div>`).join('');
+      } else {
+        statsEl.innerHTML = `<div class="col-span-full meta-text">No rollup for today yet — the almanac is patient.</div>`;
+      }
+
+      function winHtml(w) {
+        if (!w || !w.n) return 'No data';
+        return `n=${w.n}<br>avg high ${fmtTemp(w.avg_high_f)}<br>avg low ${fmtTemp(w.avg_low_f)}<br>rain ${fmtRain(w.rain_in)}`;
+      }
+      document.getElementById('win-7').innerHTML = winHtml(thisDay.last_7);
+      document.getElementById('win-30').innerHTML = winHtml(thisDay.last_30);
+
+      const nws = thisDay.nws_month_normal || {};
+      document.getElementById('nws-month').textContent =
+        `${nws.month || ''}: avg high ${fmtTemp(nws.avg_high_f)} / low ${fmtTemp(nws.avg_low_f)} · rain ${fmtRain(nws.rain_in)} · ${nws.source || ''}`;
+
+      const otd = thisDay.on_this_date || [];
+      document.getElementById('on-this-date').innerHTML = otd.length
+        ? otd.map(r => `${esc(r.day)}: high ${fmtTemp(r.temp_max)} low ${fmtTemp(r.temp_min)} rain ${fmtRain(r.rain_daily_in)}`).join('<br>')
+        : '';
+
+      // Rain book
+      document.getElementById('ytd-rain').textContent = fmtRain(rain.ytd_in);
+      document.getElementById('ytd-nws').textContent = fmtRain(rain.nws_ytd_normal_in);
+      const delta = rain.ytd_vs_nws_delta_in;
+      const dEl = document.getElementById('ytd-delta');
+      if (delta == null) {
+        dEl.textContent = '—';
+      } else {
+        const sign = delta > 0 ? '+' : '';
+        dEl.textContent = `${sign}${fmtRain(delta)} vs normal`;
+        dEl.className = 'text-xl font-mono ' + (delta >= 0 ? 'neon-green' : 'neon-yellow');
+      }
+      document.getElementById('dry-streak').textContent = `${rain.dry_streak_days ?? '—'}d`;
+      document.getElementById('drought-label').textContent =
+        `${rain.drought_label || ''} · ${rain.drought_severity || ''}`;
+      document.getElementById('wet-meta').innerHTML =
+        `Wet days: ${rain.wet_days ?? '—'}<br>` +
+        `Longest dry: ${rain.longest_dry_streak ?? '—'}d<br>` +
+        `Longest wet: ${rain.longest_wet_streak ?? '—'}d<br>` +
+        `Month roof: ${fmtRain(rain.month_station_in)} / NWS ${fmtRain(rain.month_nws_normal_in)}`;
+
+      const months = rain.by_month || {};
+      const names = ['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      document.getElementById('rain-months').innerHTML = Object.keys(months).length
+        ? 'By month: ' + Object.entries(months).map(([m, v]) => `${names[+m] || m} ${fmtRain(v)}`).join(' · ')
+        : '';
+
+      document.getElementById('wind-ledger').textContent =
+        windLedger.peak_gust_mph != null
+          ? `Wind ledger (YTD): peak ${fmtGust(windLedger.peak_gust_mph)} on ${windLedger.peak_gust_day || '—'} · days ≥20: ${windLedger.days_gust_ge_20} · days ≥30: ${windLedger.days_gust_ge_30}`
+          : 'Wind ledger: waiting on gusts.';
+
+      // CyberSDR / WSPR guest column
+      const sdr = data.sdr || {};
+      const sdrStats = sdr.stats || {};
+      const sdrStatus = sdr.status || {};
+      const dx = sdrStats.farthest_dx || {};
+      const snr = sdrStats.best_snr || {};
+      document.getElementById('sdr-spots').textContent =
+        sdrStats.total_spots != null ? sdrStats.total_spots : '—';
+      document.getElementById('sdr-calls').textContent =
+        sdrStats.unique_calls != null ? sdrStats.unique_calls : '—';
+      const dxKm = dx.distance_km;
+      const dxMi = dxKm != null ? Math.round(dxKm * 0.621371) : null;
+      document.getElementById('sdr-dx').textContent =
+        dxMi != null ? `${dxMi.toLocaleString()} mi` : '—';
+      document.getElementById('sdr-dx-meta').textContent =
+        dx.call
+          ? `${dx.call} · ${dx.grid || '—'} · ${dx.band || '—'} · ${dxKm != null ? Math.round(dxKm).toLocaleString() + ' km' : ''}`
+          : (sdr.ok ? 'No DX yet today' : 'CyberSDR quiet');
+      document.getElementById('sdr-snr').textContent =
+        snr.snr != null ? `${snr.snr > 0 ? '+' : ''}${snr.snr} dB` : '—';
+      document.getElementById('sdr-snr-meta').textContent =
+        snr.call ? `${snr.call} · ${snr.band || '—'} · ${snr.grid || '—'}` : '—';
+      document.getElementById('sdr-band').textContent =
+        sdrStatus.current_band || '—';
+      document.getElementById('sdr-state').textContent =
+        sdrStatus.state
+          ? `${sdrStatus.state}${sdrStatus.paused ? ' (paused)' : ''}`
+          : (sdr.ok ? '—' : 'offline');
+      const bands = sdr.bands || [];
+      document.getElementById('sdr-bands').innerHTML = bands.length
+        ? bands.map(b =>
+            `<span class="inline-block border border-white/15 px-2 py-1 mr-1 mb-1 font-mono small-text">` +
+            `${esc(b.band)}: ${b.count ?? 0} spots` +
+            (b.farthest_km != null ? ` · ${Math.round(b.farthest_km * 0.621371)} mi` : '') +
+            `</span>`
+          ).join('')
+        : '<span class="meta-text">No band summary yet.</span>';
+      document.getElementById('sdr-counsel').textContent =
+        sdr.counsel || 'WSPR ledger loading…';
+      document.getElementById('sdr-meta').textContent = sdr.ok
+        ? `Source: CyberSDR · today UTC · next decode ${sdrStatus.next_decode_utc || '—'}`
+        : `CyberSDR unavailable${sdr.error ? ': ' + sdr.error : ''}`;
+
+      // Phenology
+      const list = document.getElementById('pheno-list');
+      list.innerHTML = (pheno.items || []).map(it => `
+        <li class="flex gap-3 items-start border-b border-white/5 pb-3">
+          <span class="${it.done ? 'check-done' : 'check-open'}">${it.done ? '☑' : '☐'}</span>
+          <div>
+            <div class="tracking-wide">${esc(it.label)}</div>
+            <div class="meta-text font-mono mt-0.5">${esc(it.detail || '')}${it.day ? ' · ' + esc(it.day) : ''}</div>
+          </div>
+        </li>`).join('') || '<li class="meta-text">No phenology yet.</li>';
+
+      // Heatmap
+      document.getElementById('heat-title').textContent =
+        `${heat.month_name || ''} ${heat.year || ''}`;
+      const cells = heat.cells || [];
+      const tmin = heat.high_min, tmax = heat.high_max;
+      // pad week start (Mon=0 style: use JS getDay Sun=0)
+      let pad = 0;
+      if (cells.length) {
+        const d0 = new Date(cells[0].day + 'T12:00:00');
+        pad = d0.getDay(); // Sunday-first grid
+      }
+      const heatEl = document.getElementById('heatmap');
+      let html = '';
+      ['Su','Mo','Tu','We','Th','Fr','Sa'].forEach(d => {
+        html += `<div class="small-text text-center py-0.5">${d}</div>`;
+      });
+      for (let i = 0; i < pad; i++) {
+        html += `<div class="heat-cell empty"></div>`;
+      }
+      cells.forEach(c => {
+        if (!c.has_data) {
+          html += `<div class="heat-cell empty" title="${c.day}"><span>${c.dom}</span></div>`;
+        } else {
+          const bg = heatColor(c.temp_max, tmin, tmax);
+          const title = `${c.day}: high ${fmtTemp(c.temp_max)} low ${fmtTemp(c.temp_min)} rain ${fmtRain(c.rain_daily_in)}`;
+          html += `<div class="heat-cell" style="background:${bg}" title="${esc(title)}">
+            <span class="opacity-70">${c.dom}</span>
+            <span class="font-mono">${c.temp_max != null ? Math.round(convert(c.temp_max, 'temp')) : ''}</span>
+          </div>`;
+        }
+      });
+      heatEl.innerHTML = html;
+      document.getElementById('heat-scale').textContent =
+        tmin != null ? `${fmtTemp(tmin)} – ${fmtTemp(tmax)}` : 'no highs yet';
+      const hn = heat.nws_normal || {};
+      document.getElementById('heat-nws').textContent =
+        `NWS-area ${hn.name || ''}: normal high ${fmtTemp(hn.high_f)} / low ${fmtTemp(hn.low_f)} · rain ${fmtRain(hn.rain_in)}`;
+
+      // Records teaser
+      const teaser = data.records_teaser || [];
+      document.getElementById('records-teaser').innerHTML = teaser.length
+        ? teaser.map(r => {
+            let val = '—';
+            if (r.key.includes('temp')) val = fmtTemp(r.value);
+            else if (r.key.includes('gust')) val = fmtGust(r.value);
+            else if (r.key.includes('rain') || r.key.includes('precip')) val = fmtRain(r.value);
+            else val = r.value;
+            return `<div class="border border-white/10 p-3 bg-black/20">
+              <div class="hud-label">${esc(r.label)}</div>
+              <div class="metric-value neon-cyan mt-1">${val}</div>
+              <div class="meta-text mt-1">${esc(r.day || '')}</div>
+            </div>`;
+          }).join('')
+        : '<div class="meta-text">No legends yet — keep the uplink warm.</div>';
+    }
+
+    async function load() {
+      const res = await fetch('/api/almanac', { cache: 'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const body = await res.json();
+      if (!body.success) throw new Error(body.error || 'almanac failed');
+      render(body.data);
+    }
+
+    load().catch(err => {
+      console.error('[almanac]', err);
+      document.getElementById('volume-joke').textContent =
+        'The almanac failed to load. The creek does not care, but we do. ' + err;
+    });
+  </script>
+</body>
+</html>

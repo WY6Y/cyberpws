@@ -31,7 +31,7 @@
 
     body {
       font-family: "Share Tech Mono", "VT323", ui-monospace, monospace;
-      background: #050505;
+      background: var(--bg);
       color: #c0c0c0;
       min-height: 100dvh;
       height: auto;
@@ -274,7 +274,7 @@
       <div>
         <div class="flex items-center gap-x-3">
           <div class="text-4xl font-bold tracking-[6px] cyber-title neon-cyan">WY6Y WEATHER</div>
-          <div class="text-xs px-3 py-1 border border-[#00ff9f]/40 text-[#00ff9f] tracking-[2px]">v0.8.5</div>
+          <div class="text-xs px-3 py-1 border border-[#00ff9f]/40 text-[#00ff9f] tracking-[2px]">v0.10.0</div>
         </div>
         <div class="text-[10px] text-[#00ff9f]/60 -mt-1">PERSONAL WEATHER UPLINK • NO CORPORATE SHIT</div>
       </div>
@@ -282,6 +282,12 @@
       <div class="text-right">
         <div class="text-sm neon-green tracking-[3px] font-bold">{{ display_name }} • {{ neighborhood | upper }}</div>
         <div class="text-[10px] opacity-60">WEATHERTHIEF • ACURITE 5-IN-1 • rtl_433 UPLINK</div>
+        <div class="mt-1 flex justify-end gap-x-3 text-[10px]">
+          <a href="/almanac" class="neon-magenta hover:underline tracking-widest">ALMANAC</a>
+          <a href="/records" class="neon-cyan hover:underline tracking-widest">RECORDS</a>
+          <a id="nws-radar-link" href="https://radar.weather.gov/station/KTLX/standard" target="_blank" rel="noopener"
+             class="opacity-60 hover:text-white tracking-widest">KTLX RADAR ↗</a>
+        </div>
       </div>
 
       <div class="text-right min-w-[180px]">
@@ -297,6 +303,24 @@
           <span class="text-[#00ff9f] tracking-widest text-xs">UPLINK NOMINAL</span>
         </div>
         <button id="pwa-install-btn" class="pwa-install-hint hidden mt-1 neon-button px-2 py-0.5 text-[9px]">ADD TO HOME SCREEN</button>
+      </div>
+    </div>
+
+    <!-- UPLINK HEALTH STRIP -->
+    <div id="health-strip" class="mb-4 hud-border bg-[#0a0a0f] px-4 py-2.5 rounded-sm">
+      <div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-[10px] tracking-wider">
+        <div class="flex items-center gap-x-2 min-w-[140px]">
+          <span id="health-dot" class="inline-block w-2.5 h-2.5 rounded-full bg-[#00ff9f] status-dot"></span>
+          <span id="health-label" class="neon-green font-bold tracking-[2px]">UPLINK NOMINAL</span>
+        </div>
+        <div class="opacity-40">|</div>
+        <div>MQTT <span id="health-mqtt" class="font-bold text-[#00ff9f]">—</span></div>
+        <div>RTL <span id="health-rtl" class="font-bold text-[#00ff9f]">—</span></div>
+        <div>RSSI <span id="health-rssi" class="font-mono text-[#00f0ff]">—</span></div>
+        <div>BATT <span id="health-batt" class="font-bold">—</span></div>
+        <div>WD <span id="health-wd" class="font-bold text-[#ffff00]">IDLE</span></div>
+        <div class="opacity-50">SENSOR <span id="health-sensor" class="font-mono">563</span></div>
+        <div class="ml-auto opacity-40">DB <span id="health-db" class="font-mono">0</span> SAMPLES</div>
       </div>
     </div>
 
@@ -440,6 +464,76 @@
         </div>
       </div>
 
+      <!-- TODAY'S EXTREMES -->
+      <div class="lg:col-span-8 hud-border bg-[#0a0a0f] p-4 rounded-sm">
+        <div class="flex items-center justify-between mb-2">
+          <div class="section-title mb-0">TODAY • LOCAL EXTREMES</div>
+          <div id="daily-day" class="text-[10px] text-[#00ff9f]/50 tracking-widest">—</div>
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+          <div>
+            <div class="hud-label">HIGH TEMP</div>
+            <div>
+              <span id="daily-temp-max" class="metric-value neon-yellow">--</span>
+              <span id="daily-unit-tmax" class="value-unit">°F</span>
+            </div>
+            <div id="daily-temp-max-at" class="text-[10px] opacity-40">—</div>
+          </div>
+          <div>
+            <div class="hud-label">LOW TEMP</div>
+            <div>
+              <span id="daily-temp-min" class="metric-value neon-cyan">--</span>
+              <span id="daily-unit-tmin" class="value-unit">°F</span>
+            </div>
+            <div id="daily-temp-min-at" class="text-[10px] opacity-40">—</div>
+          </div>
+          <div>
+            <div class="hud-label">PEAK GUST</div>
+            <div>
+              <span id="daily-gust-max" class="metric-value text-[#ff00aa]">--</span>
+              <span id="daily-unit-gust" class="value-unit">mph</span>
+            </div>
+            <div id="daily-gust-max-at" class="text-[10px] opacity-40">—</div>
+          </div>
+          <div>
+            <div class="hud-label">RAIN TODAY</div>
+            <div>
+              <span id="daily-rain" class="metric-value neon-green">--</span>
+              <span id="daily-unit-rain" class="value-unit">"</span>
+            </div>
+            <div class="text-[10px] opacity-40">
+              HUM <span id="daily-hum-range">—</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- MINI RADAR (NWS KTLX ridge — real basemap, not RainViewer overlay) -->
+      <div class="lg:col-span-4 hud-border bg-[#0a0a0f] p-3 rounded-sm flex flex-col">
+        <div class="flex items-center justify-between mb-2 px-1">
+          <div class="section-title mb-0">RADAR • KTLX</div>
+          <div class="flex gap-x-2 items-center">
+            <button type="button" id="radar-loop-btn" onclick="toggleRadarLoop()"
+                    class="text-[9px] text-[#00ff9f]/80 hover:text-[#00ff9f] tracking-widest border border-[#00ff9f]/30 px-1.5 py-0.5">LOOP</button>
+            <a id="radar-ext-link" href="https://radar.weather.gov/station/KTLX/standard" target="_blank" rel="noopener"
+               class="text-[9px] text-[#00f0ff]/70 hover:text-[#00f0ff] tracking-widest">FULL ↗</a>
+          </div>
+        </div>
+        <div class="relative flex-1 min-h-[160px] bg-[#0a1020] border border-white/5 overflow-hidden rounded-sm">
+          <a id="radar-tile-link" href="https://radar.weather.gov/station/KTLX/standard" target="_blank" rel="noopener" class="block">
+            <img id="radar-tile" alt="KTLX NEXRAD" class="w-full h-auto object-contain mx-auto"
+                 style="min-height:160px; max-height:240px;" />
+          </a>
+          <div id="radar-overlay" class="absolute inset-0 flex items-center justify-center text-[10px] opacity-50 tracking-widest pointer-events-none">
+            LOADING KTLX…
+          </div>
+          <div class="absolute bottom-1 left-1 right-1 flex justify-between text-[9px] px-1 pointer-events-none">
+            <span id="radar-meta" class="bg-black/70 px-1.5 py-0.5 rounded">—</span>
+            <span class="bg-black/70 px-1.5 py-0.5 rounded text-[#00ff9f]">NWS RIDGE</span>
+          </div>
+        </div>
+      </div>
+
       <!-- CHARTS ROW -->
       <div class="lg:col-span-12 grid grid-cols-1 xl:grid-cols-2 gap-4 mt-1">
         
@@ -508,12 +602,12 @@
     <!-- FOOTER -->
     <div class="mt-6 flex items-center justify-between text-[10px] opacity-40">
       <div>
-        WEATHERTHIEF MQTT • LIVE rtl_433 • <span id="data-source">local</span> • <span id="fetch-count">0</span> POLLS
+        WEATHERTHIEF MQTT • LIVE rtl_433 • SQLite ARCHIVE • <span id="data-source">local</span> • <span id="fetch-count">0</span> POLLS
       </div>
       <div class="flex gap-x-4">
+        <a href="/almanac" class="hover:text-white">ALMANAC</a>
+        <a href="/records" class="hover:text-white">RECORDS</a>
         <button onclick="toggleGlitch()" class="hover:text-white">GLITCH</button>
-        <a href="https://www.wunderground.com/personal-weather-station/dashboard?ID=YOUR_STATION_ID" target="_blank" 
-           class="hover:text-white">RAW WU</a>
         <span>PRESS <kbd class="border px-1">R</kbd> TO REFRESH</span>
       </div>
     </div>
@@ -576,6 +670,7 @@
         updateDataLog(window.rawRapid, u);
       }
       if (window.rawSummary) updateSummary(window.rawSummary, u);
+      if (window.rawDaily) updateDaily(window.rawDaily, u);
     }
 
     function updateUnitsUI() {
@@ -1030,6 +1125,214 @@
       });
     }
 
+    function fmtClock(ts) {
+      if (!ts) return '—';
+      try {
+        return new Date(ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      } catch (_) {
+        return '—';
+      }
+    }
+
+    function updateHealth(h) {
+      if (!h) return;
+      const status = h.status || 'unknown';
+      const colorMap = {
+        nominal: { dot: 'bg-[#00ff9f]', label: 'neon-green' },
+        degraded: { dot: 'bg-[#ffff00]', label: 'neon-yellow' },
+        recovering: { dot: 'bg-[#ff00aa]', label: 'neon-magenta' },
+        stale: { dot: 'bg-[#ff3366]', label: 'text-red-400' },
+        down: { dot: 'bg-[#ff3366]', label: 'text-red-400' },
+      };
+      const c = colorMap[status] || colorMap.stale;
+      const dot = document.getElementById('health-dot');
+      const label = document.getElementById('health-label');
+      if (dot) dot.className = `inline-block w-2.5 h-2.5 rounded-full status-dot ${c.dot}`;
+      if (label) {
+        label.textContent = h.status_label || status.toUpperCase();
+        label.className = `${c.label} font-bold tracking-[2px]`;
+      }
+      const mqttEl = document.getElementById('health-mqtt');
+      if (mqttEl) {
+        if (!h.mqtt_connected) {
+          mqttEl.textContent = 'DOWN';
+          mqttEl.className = 'font-bold text-red-400';
+        } else if (h.mqtt_rx_age_sec != null && h.mqtt_rx_age_sec > 120) {
+          mqttEl.textContent = `QUIET ${h.mqtt_rx_age_sec}s`;
+          mqttEl.className = 'font-bold text-[#ffff00]';
+        } else {
+          mqttEl.textContent = h.mqtt_rx_age_sec != null ? `OK ${h.mqtt_rx_age_sec}s` : 'OK';
+          mqttEl.className = 'font-bold text-[#00ff9f]';
+        }
+      }
+      const rtlEl = document.getElementById('health-rtl');
+      if (rtlEl) {
+        const age = h.rtl_age_sec;
+        if (age == null) {
+          rtlEl.textContent = 'NO DATA';
+          rtlEl.className = 'font-bold text-red-400';
+        } else if (age > 900) {
+          rtlEl.textContent = `STALE ${age}s`;
+          rtlEl.className = 'font-bold text-red-400';
+        } else if (age > 120) {
+          rtlEl.textContent = `SLOW ${age}s`;
+          rtlEl.className = 'font-bold text-[#ffff00]';
+        } else {
+          rtlEl.textContent = `${age}s`;
+          rtlEl.className = 'font-bold text-[#00ff9f]';
+        }
+      }
+      const rssiEl = document.getElementById('health-rssi');
+      if (rssiEl) {
+        rssiEl.textContent = h.rssi != null ? `${Math.round(h.rssi)} dBm` : '—';
+      }
+      const battEl = document.getElementById('health-batt');
+      if (battEl) {
+        if (h.battery_ok === 1 || h.battery_ok === true) {
+          battEl.textContent = 'OK';
+          battEl.className = 'font-bold text-[#00ff9f]';
+        } else if (h.battery_ok === 0 || h.battery_ok === false) {
+          battEl.textContent = 'LOW';
+          battEl.className = 'font-bold text-red-400';
+        } else {
+          battEl.textContent = '—';
+          battEl.className = 'font-bold opacity-50';
+        }
+      }
+      const wdEl = document.getElementById('health-wd');
+      if (wdEl) {
+        const stage = (h.watchdog_stage || 'idle').toUpperCase();
+        const att = h.watchdog_attempt || 0;
+        wdEl.textContent = att > 0 ? `${stage} #${att}` : stage;
+        wdEl.className = stage === 'IDLE'
+          ? 'font-bold text-[#00ff9f]'
+          : stage === 'PAUSED'
+            ? 'font-bold text-[#ffff00]'
+            : 'font-bold text-[#ff00aa]';
+      }
+      const sensorEl = document.getElementById('health-sensor');
+      if (sensorEl) sensorEl.textContent = h.sensor_id != null ? h.sensor_id : '—';
+      const dbEl = document.getElementById('health-db');
+      if (dbEl && h.db) dbEl.textContent = h.db.samples != null ? h.db.samples : '0';
+
+      // Mirror into header uplink status
+      const statusEl = document.getElementById('uplink-status');
+      if (statusEl) {
+        const age = h.rtl_age_sec;
+        const ageStr = age != null ? `${age}s` : '—';
+        statusEl.innerHTML = `
+          <span class="inline-block w-2 h-2 ${c.dot} rounded-full status-dot"></span>
+          <span class="${c.label} tracking-widest text-xs">${h.status_label || 'UPLINK'} • ${ageStr}</span>
+        `;
+      }
+    }
+
+    function updateDaily(d, units = 'imperial') {
+      if (!d) return;
+      const toM = units === 'metric';
+      const uT = getUnit('temp', toM);
+      const uW = getUnit('wind', toM);
+      const uPr = getUnit('precip', toM);
+      const dayEl = document.getElementById('daily-day');
+      if (dayEl) dayEl.textContent = d.day || '—';
+
+      const tmax = convert(d.temp_max, 'temp', toM);
+      const tmin = convert(d.temp_min, 'temp', toM);
+      const gust = convert(d.wind_gust_max, 'gust', toM);
+      const rain = convert(d.rain_daily_in, 'precip', toM);
+
+      const set = (id, val, digits) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (val == null || Number.isNaN(val)) el.textContent = '--';
+        else el.textContent = digits != null ? Number(val).toFixed(digits) : Math.round(val);
+      };
+      set('daily-temp-max', tmax, null);
+      set('daily-temp-min', tmin, null);
+      set('daily-gust-max', gust, null);
+      set('daily-rain', rain, 2);
+
+      const utmax = document.getElementById('daily-unit-tmax'); if (utmax) utmax.textContent = uT;
+      const utmin = document.getElementById('daily-unit-tmin'); if (utmin) utmin.textContent = uT;
+      const ug = document.getElementById('daily-unit-gust'); if (ug) ug.textContent = uW;
+      const ur = document.getElementById('daily-unit-rain'); if (ur) ur.textContent = uPr;
+
+      const tmaxAt = document.getElementById('daily-temp-max-at');
+      if (tmaxAt) tmaxAt.textContent = d.temp_max_ts ? `at ${fmtClock(d.temp_max_ts)}` : '—';
+      const tminAt = document.getElementById('daily-temp-min-at');
+      if (tminAt) tminAt.textContent = d.temp_min_ts ? `at ${fmtClock(d.temp_min_ts)}` : '—';
+      const gustAt = document.getElementById('daily-gust-max-at');
+      if (gustAt) gustAt.textContent = d.wind_gust_max_ts ? `at ${fmtClock(d.wind_gust_max_ts)}` : '—';
+
+      const humEl = document.getElementById('daily-hum-range');
+      if (humEl) {
+        if (d.humidity_min != null && d.humidity_max != null) {
+          humEl.textContent = `${Math.round(d.humidity_min)}–${Math.round(d.humidity_max)}%`;
+        } else {
+          humEl.textContent = '—';
+        }
+      }
+    }
+
+    let radarLoopOn = false;
+    let lastRadar = null;
+
+    function radarImageUrl(r, loop) {
+      if (!r) return null;
+      if (loop && r.loop_url) return r.loop_url;
+      return r.tile_url || null;
+    }
+
+    function applyRadarSrc(r) {
+      const img = document.getElementById('radar-tile');
+      const overlay = document.getElementById('radar-overlay');
+      if (!img || !r) return;
+      const url = radarImageUrl(r, radarLoopOn);
+      if (!url) {
+        if (overlay) {
+          overlay.classList.remove('hidden');
+          overlay.textContent = r.error ? 'RADAR OFFLINE' : 'NO FRAME';
+        }
+        return;
+      }
+      img.onload = () => { if (overlay) overlay.classList.add('hidden'); };
+      img.onerror = () => {
+        if (overlay) {
+          overlay.classList.remove('hidden');
+          overlay.textContent = 'RADAR UNAVAILABLE';
+        }
+      };
+      // cache-bust (proxy already has ?v=)
+      img.src = url + (url.includes('?') ? '&' : '?') + 't=' + Date.now();
+    }
+
+    function toggleRadarLoop() {
+      radarLoopOn = !radarLoopOn;
+      const btn = document.getElementById('radar-loop-btn');
+      if (btn) {
+        btn.textContent = radarLoopOn ? 'STATIC' : 'LOOP';
+        btn.classList.toggle('bg-[#00ff9f]/20', radarLoopOn);
+      }
+      if (lastRadar) applyRadarSrc(lastRadar);
+    }
+
+    function updateRadar(r) {
+      const meta = document.getElementById('radar-meta');
+      const ext = document.getElementById('radar-ext-link');
+      const hdr = document.getElementById('nws-radar-link');
+      const tileLink = document.getElementById('radar-tile-link');
+      if (!r) return;
+      lastRadar = r;
+      if (ext && r.nws_link) ext.href = r.nws_link;
+      if (hdr && r.nws_link) hdr.href = r.nws_link;
+      if (tileLink && r.nws_link) tileLink.href = r.nws_link;
+      applyRadarSrc(r);
+      if (meta) {
+        const site = r.site || 'KTLX';
+        meta.textContent = radarLoopOn ? `${site} · LOOP` : `${site} · LIVE`;
+      }
+    }
+
     // New: NWS alerts (heat + severe weather for Oklahoma)
     function updateAlerts(alerts) {
       const box = document.getElementById('alerts-box');
@@ -1068,7 +1371,7 @@
         const dashRes = await fetchJSON('/api/dashboard');
         if (!dashRes.success) throw new Error(dashRes.error || 'dashboard fetch failed');
 
-        const { current, rapid, summary, alerts, source } = dashRes.data;
+        const { current, rapid, summary, alerts, source, health, daily, radar } = dashRes.data;
         const srcEl = document.getElementById('data-source');
         if (srcEl) srcEl.textContent = source || dashRes.cache?.source || 'weatherthief';
 
@@ -1089,14 +1392,17 @@
         if (alerts) {
           updateAlerts(alerts);
         }
-
-        const localAge = dashRes.data?.local?.last_age_sec;
-        const status = document.getElementById('uplink-status');
-        if (status && localAge != null) {
-          status.innerHTML = `
-            <span class="inline-block w-2 h-2 bg-[#00ff9f] rounded-full status-dot"></span>
-            <span class="text-[#00ff9f] tracking-widest text-xs">WEATHERTHIEF LIVE • ${localAge}s</span>
-          `;
+        if (health) {
+          updateHealth(health);
+          window.rawHealth = health;
+        }
+        if (daily) {
+          updateDaily(daily, currentUnits);
+          window.rawDaily = daily;
+        }
+        if (radar) {
+          updateRadar(radar);
+          window.rawRadar = radar;
         }
 
         fetchCount++;
@@ -1181,7 +1487,21 @@
     function setupPWA() {
       if ('serviceWorker' in navigator) {
         const _swScope = '{{ url_prefix }}/';
-        navigator.serviceWorker.register('/sw.js', { scope: _swScope }).catch((e) => console.warn('SW register failed', e));
+        // ?v= bumps force browsers to re-fetch sw.js after deploy (old SW was cache-first on /)
+        navigator.serviceWorker.register('/sw.js?v=5', { scope: _swScope })
+          .then((reg) => {
+            reg.update().catch(() => {});
+            // If a waiting worker exists, activate it now
+            if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+          })
+          .catch((e) => console.warn('SW register failed', e));
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          // One-shot reload when new SW takes control so v0.9 shell appears
+          if (!window.__wxSwReloaded) {
+            window.__wxSwReloaded = true;
+            window.location.reload();
+          }
+        });
       }
 
       const installBtn = document.getElementById('pwa-install-btn');

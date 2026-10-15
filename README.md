@@ -99,13 +99,33 @@ mosquitto_sub -h 127.0.0.1 -u wy6y -P 'YOUR_PASS' \
 
 ```
 app.py                       # Flask app + MQTT ingest + HUD publisher
+weather_db.py                # SQLite archive (samples, daily, records)
 templates/index.html         # Cyberpunk dashboard UI
+templates/records.html       # All-time records + daily rollup table
 static/sw.js                 # PWA service worker (cache v3)
 static/                      # PWA icons, service worker
 scripts/generate_icons.py    # Regenerate PWA icons from source
-weatherthief_history.json    # Persisted rolling history
+weatherthief_history.json    # Recent rolling buffer + rain baseline (gitignored)
+weather.db                   # SQLite archive (gitignored; 90d samples, forever daily/records)
 .env                         # Runtime config (gitignored)
 ```
+
+## Dashboard extras (v0.9.2)
+
+| Feature | Where |
+|---------|--------|
+| **Uplink health strip** | MQTT / RTL age / RSSI / battery / watchdog stage + sample count |
+| **Today's extremes** | High/low temp, peak gust, rain, humidity range (SQLite daily + live) |
+| **Mini radar** | NWS **KTLX** ridge GIF via `/api/radar/image` (static + LOOP); FULL → `radar.weather.gov/station/KTLX/standard` |
+| **Records** | `/records` — all-time highs/lows/gust/rain + recent daily table |
+| **SQLite** | Every accepted decode archived; prune samples after 90 days (`WX_SAMPLE_RETENTION_DAYS`) |
+| **PWA** | Service worker network-first for HTML (`wy6y-weather-v4`); do not cache-first `/` |
+
+APIs: `/api/health`, `/api/daily`, `/api/records`, `/api/radar`, `/api/radar/image` (meta also in `/api/dashboard`).
+
+**Hopper (not built yet):** APRS WX beacon path — wait until CyberAPRS RF is solid.
+
+**Radar note:** RainViewer lat/lon tiles are transparent overlays (look empty when dry). NWS SPA deep-links with bad `settings` / site `TLX` can show **CODE 10001** — use the station path above.
 
 ## PWA install
 
@@ -114,8 +134,7 @@ The dashboard is installable as a PWA (works offline for the shell; live data re
 **iOS (Safari):** Share → Add to Home Screen
 **Android (Chrome):** tap Install App banner or browser menu → Install app
 
-> **Prerequisite:** Your device must trust the Caddy internal CA certificate.
-> Download from `https://wx.wy6y.net/caddy-ca.crt` and install it.
+> **Prerequisite:** Your device must trust the Caddy internal CA certificate. Install the CA through an authenticated/internal fleet provisioning path; it is intentionally not published by this website.
 > On iOS, after installing the profile go to Settings → General → About → Certificate Trust Settings and enable it.
 
 If the home screen icon shows "Not Found" after install, visit `https://wx.wy6y.net/` once in the browser (not the icon) to trigger a service worker update, then re-add to home screen.

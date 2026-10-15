@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#00f0ff">
+  <meta name="color-scheme" content="dark">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" href="/static/favicon.ico" sizes="any">
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+  <title>WY6Y Weather • Records</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&amp;family=VT323&amp;display=swap');
+    :root {
+      --neon-cyan: #00f0ff;
+      --neon-green: #00ff9f;
+      --neon-magenta: #ff00aa;
+      --neon-yellow: #ffff00;
+    }
+    body {
+      font-family: "Share Tech Mono", "VT323", ui-monospace, monospace;
+      background: #050505;
+      color: #c0c0c0;
+      min-height: 100dvh;
+    }
+    .cyber-grid {
+      background-image:
+        linear-gradient(rgba(0, 240, 255, 0.06) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 240, 255, 0.06) 1px, transparent 1px);
+      background-size: 32px 32px;
+    }
+    .neon-cyan { color: var(--neon-cyan); text-shadow: 0 0 8px var(--neon-cyan); }
+    .neon-green { color: var(--neon-green); text-shadow: 0 0 8px var(--neon-green); }
+    .neon-magenta { color: var(--neon-magenta); text-shadow: 0 0 8px var(--neon-magenta); }
+    .neon-yellow { color: var(--neon-yellow); text-shadow: 0 0 8px var(--neon-yellow); }
+    .hud-border {
+      border: 1px solid rgba(0, 240, 255, 0.3);
+      box-shadow:
+        0 0 0 1px rgba(0, 240, 255, 0.1),
+        0 0 12px rgba(0, 240, 255, 0.15),
+        inset 0 0 12px rgba(0, 240, 255, 0.05);
+    }
+    .section-title {
+      font-size: 0.75rem;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      opacity: 0.7;
+      border-bottom: 1px solid rgba(0, 240, 255, 0.2);
+      padding-bottom: 2px;
+      margin-bottom: 8px;
+    }
+    .metric-value {
+      font-size: 2rem;
+      line-height: 1;
+      font-weight: 700;
+      font-family: "VT323", monospace;
+    }
+    .hud-label {
+      font-size: 0.65rem;
+      letter-spacing: 2px;
+      opacity: 0.5;
+      text-transform: uppercase;
+    }
+  </style>
+</head>
+<body class="bg-[#050505] text-[#c0c0c0] cyber-grid">
+  <div class="max-w-[1100px] mx-auto px-6 py-5">
+    <div class="flex items-center justify-between mb-5 border-b border-white/10 pb-4">
+      <div>
+        <div class="flex items-center gap-x-3">
+          <a href="/" class="text-3xl font-bold tracking-[6px] neon-cyan hover:underline">WY6Y WEATHER</a>
+          <div class="text-xs px-3 py-1 border border-[#ff00aa]/40 text-[#ff00aa] tracking-[2px]">RECORDS</div>
+        </div>
+        <div class="text-[10px] text-[#00ff9f]/60 mt-1">
+          {{ display_name }} • {{ neighborhood | upper }} • {{ gridsquare }} • STATION {{ station_id }}
+        </div>
+      </div>
+      <div class="text-right text-[10px]">
+        <a href="/almanac" class="neon-button border border-[#ff00aa]/40 px-3 py-1 tracking-widest hover:bg-[#ff00aa]/10 mr-2">ALMANAC</a>
+        <a href="/" class="neon-button border border-[#00ff9f]/40 px-3 py-1 tracking-widest hover:bg-[#00ff9f]/10">← DASHBOARD</a>
+        <div id="db-meta" class="mt-2 opacity-40 font-mono">—</div>
+      </div>
+    </div>
+
+    <div class="hud-border bg-[#0a0a0f] p-5 rounded-sm mb-4">
+      <div class="section-title">ALL-TIME STATION RECORDS</div>
+      <div id="records-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div class="opacity-50 text-sm">LOADING…</div>
+      </div>
+    </div>
+
+    <div class="hud-border bg-[#0a0a0f] p-5 rounded-sm">
+      <div class="flex items-center justify-between mb-2">
+        <div class="section-title mb-0">RECENT DAILY ROLLUP</div>
+        <div class="text-[10px] opacity-40">LAST 30 DAYS WITH DATA</div>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-xs font-mono">
+          <thead class="text-[10px] opacity-50 tracking-widest border-b border-white/10">
+            <tr>
+              <th class="py-2 pr-3">DAY</th>
+              <th class="py-2 pr-3">HIGH</th>
+              <th class="py-2 pr-3">LOW</th>
+              <th class="py-2 pr-3">PEAK GUST</th>
+              <th class="py-2 pr-3">RAIN</th>
+              <th class="py-2 pr-3">HUM</th>
+              <th class="py-2">SAMPLES</th>
+            </tr>
+          </thead>
+          <tbody id="daily-tbody">
+            <tr><td colspan="7" class="py-4 opacity-50">LOADING…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="mt-6 text-[10px] opacity-40 flex justify-between">
+      <div>SQLite ARCHIVE • 90-DAY SAMPLE RETENTION • DAILY + RECORDS FOREVER</div>
+      <div>APRS WX BEACON — HOPPER (after CyberAPRS RF fixed)</div>
+    </div>
+  </div>
+
+  <script>
+    let units = 'imperial';
+    try {
+      units = localStorage.getItem('wx_units') || 'imperial';
+    } catch (_) {}
+
+    function convert(val, type) {
+      if (val == null || Number.isNaN(Number(val))) return null;
+      const v = Number(val);
+      const metric = units === 'metric';
+      if (!metric) return v;
+      if (type === 'temp') return (v - 32) * 5 / 9;
+      if (type === 'wind' || type === 'gust') return v * 1.60934;
+      if (type === 'precip') return v * 25.4;
+      return v;
+    }
+
+    function unit(type) {
+      const metric = units === 'metric';
+      if (type === 'temp') return metric ? '°C' : '°F';
+      if (type === 'wind' || type === 'gust') return metric ? 'kph' : 'mph';
+      if (type === 'precip') return metric ? 'mm' : '"';
+      return '';
+    }
+
+    function fmtWhen(ts, day) {
+      if (ts) {
+        try {
+          return new Date(ts * 1000).toLocaleString();
+        } catch (_) {}
+      }
+      return day || '—';
+    }
+
+    function fmtVal(key, value) {
+      if (value == null) return '—';
+      if (key.includes('temp')) {
+        const v = convert(value, 'temp');
+        return `${Math.round(v)}${unit('temp')}`;
+      }
+      if (key.includes('gust') || key.includes('wind')) {
+        const v = convert(value, 'gust');
+        return `${Math.round(v)} ${unit('gust')}`;
+      }
+      if (key.includes('rain') || key.includes('precip')) {
+        const v = convert(value, 'precip');
+        const digits = units === 'metric' ? 1 : 2;
+        return `${v.toFixed(digits)} ${unit('precip')}${key.includes('rate') ? '/hr' : ''}`;
+      }
+      if (key.includes('humidity')) return `${Math.round(value)}%`;
+      return String(value);
+    }
+
+    async function load() {
+      const res = await fetch('/api/records');
+      const body = await res.json();
+      if (!body.success) throw new Error(body.error || 'failed');
+      const data = body.data;
+      const grid = document.getElementById('records-grid');
+      const items = data.records || [];
+      if (!items.length) {
+        grid.innerHTML = `<div class="opacity-60 text-sm col-span-full">
+          NO RECORDS YET — archive starts filling as WeatherThief decodes arrive.
+        </div>`;
+      } else {
+        grid.innerHTML = items.map(r => `
+          <div class="border border-white/10 p-3 rounded-sm bg-black/20">
+            <div class="hud-label mb-1">${r.label}</div>
+            <div class="metric-value neon-cyan">${fmtVal(r.key, r.value)}</div>
+            <div class="text-[10px] opacity-40 mt-1">${fmtWhen(r.ts, r.day)}</div>
+          </div>
+        `).join('');
+      }
+
+      const days = data.recent_days || [];
+      const tbody = document.getElementById('daily-tbody');
+      if (!days.length) {
+        tbody.innerHTML = `<tr><td colspan="7" class="py-4 opacity-50">No daily rollups yet.</td></tr>`;
+      } else {
+        tbody.innerHTML = days.map(d => {
+          const hi = convert(d.temp_max, 'temp');
+          const lo = convert(d.temp_min, 'temp');
+          const gust = convert(d.wind_gust_max, 'gust');
+          const rain = convert(d.rain_daily_in, 'precip');
+          const hum = (d.humidity_min != null && d.humidity_max != null)
+            ? `${Math.round(d.humidity_min)}–${Math.round(d.humidity_max)}%`
+            : '—';
+          return `<tr class="border-b border-white/5 hover:bg-white/5">
+            <td class="py-2 pr-3 neon-green">${d.day}</td>
+            <td class="py-2 pr-3 neon-yellow">${hi != null ? Math.round(hi) + unit('temp') : '—'}</td>
+            <td class="py-2 pr-3 neon-cyan">${lo != null ? Math.round(lo) + unit('temp') : '—'}</td>
+            <td class="py-2 pr-3 text-[#ff00aa]">${gust != null ? Math.round(gust) + ' ' + unit('gust') : '—'}</td>
+            <td class="py-2 pr-3">${rain != null ? rain.toFixed(units === 'metric' ? 1 : 2) + unit('precip') : '—'}</td>
+            <td class="py-2 pr-3">${hum}</td>
+            <td class="py-2 opacity-50">${d.samples || 0}</td>
+          </tr>`;
+        }).join('');
+      }
+
+      const db = data.db || {};
+      const meta = document.getElementById('db-meta');
+      if (meta) {
+        meta.textContent = `${db.samples || 0} samples · ${db.daily_days || 0} days · retain ${db.retention_days || 90}d`;
+      }
+    }
+
+    load().catch(e => {
+      document.getElementById('records-grid').innerHTML =
+        `<div class="text-red-400 text-sm">FAILED: ${e.message}</div>`;
+    });
+  </script>
+</body>
+</html>
