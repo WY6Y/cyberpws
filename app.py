@@ -1485,6 +1485,11 @@ def _ingest_rtl433(payload: dict, topic: str):
             _local_state["merged"]["_prev_rain_mm"] = merged["rain_mm"]
             _local_state["merged"]["_prev_rain_ts"] = now
             _update_daily_rain(merged, now, lock_held=True)
+        elif _local_state["merged"].get("rain_mm") is not None:
+            # AcuRite 5n1 alternates packet types and only one carries rain_mm.
+            # Re-derive from the last known counter so a rain-less packet just
+            # after midnight can't carry yesterday's daily total into today.
+            _update_daily_rain(_local_state["merged"], now, lock_held=True)
 
         snap = _snapshot_readings(_local_state["merged"])
         point["readings"] = snap
